@@ -85,6 +85,7 @@ if __name__ == "__main__":
   poseresnet = PoseResNet(use_fpn = False, head_hidden_channels = 64, name = 'poseresnet2');
   outputs = poseresnet(inputs)
   print([o.shape for o in outputs]);
+  poseresnet.save('poseresnet.h5');
   tf.keras.utils.plot_model(poseresnet, to_file = 'poseresnet.png', expand_nested = True);
   poseresnet = PoseResNet(use_fpn = True, head_hidden_channels = None, name = 'poseresnet3');
   outputs = poseresnet(inputs)
@@ -92,4 +93,5 @@ if __name__ == "__main__":
   poseresnet = PoseResNet(use_fpn = True, head_hidden_channels = 64, name = 'poseresnet4');
   outputs = poseresnet(inputs)
   print([o.shape for o in outputs]);
+  poseresnet.save('poseresnet_fpn.h5');
   tf.keras.utils.plot_model(poseresnet, to_file = 'poseresnet_fpn.png', expand_nested = True);
