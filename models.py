@@ -2,7 +2,7 @@
 
 import tensorflow as tf;
 
-def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, head_hidden_channels = 64, heads_output_channels = {'hm_cen': 3, 'cen_offset': 2, 'direction': 2, 'z_coor': 1, 'dim': 3}):
+def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, head_hidden_channels = 64, heads_output_channels = {'hm_cen': 3, 'cen_offset': 2, 'direction': 2, 'z_coor': 1, 'dim': 3}, **kwargs):
   assert type(img_shape) in [list, tuple] and len(img_shape) == 2;
   assert type(num_resnet_layers) is int and num_resnet_layers in [18, 34, 50, 101, 152];
   assert head_hidden_channels is None or type(head_hidden_channels) is int;
@@ -20,17 +20,18 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, h
     resnet = tf.keras.applications.resnet.ResNet152(input_shape = (img_shape[0], img_shape[1], 3), include_top = False, weights = 'imagenet');
   else:
     raise Exception('unknown configuration!');
+  model = tf.keras.Model(inputs = resnet.inputs, outputs = [resnet.get_layer('conv2_block3_out').output, resnet.get_layer('conv3_block4_out').output, resnet.get_layer('conv4_block6_out').output] + list(resnet.outputs));
   inputs = tf.keras.Input((img_shape[0], img_shape[1], 3)); # inputs.shape = (batch, h, w, c)
-  results = resnet(inputs); # results.shape = (batch, h/32, w/32, 2048)
+  out_layer1, out_layer2, out_layer3, out_layer4 = model(inputs); # results.shape = (batch, h/32, w/32, 2048)
   if use_fpn:
-    upsample_level1 = tf.keras.layers.UpSampling2D(size = (2,2), interpolation = 'bilinear')(results); # upsample_level1.shape = (batch, h/16, w/16, 2048)
-    concat_level1 = tf.keras.layers.Concatenate()([upsample_level1, resnet.get_layer('conv4_block6_out').output]);
+    upsample_level1 = tf.keras.layers.UpSampling2D(size = (2,2), interpolation = 'bilinear')(out_layer4); # upsample_level1.shape = (batch, h/16, w/16, 2048)
+    concat_level1 = tf.keras.layers.Concatenate()([upsample_level1, out_layer3]);
     results = tf.keras.layers.Conv2D(256, (1,1), strides = (1,1), padding = 'same')(concat_level1);
     upsample_level2 = tf.keras.layers.UpSampling2D(size = (2,2), interpolation = 'bilinear')(results); # upsample_level2.shape = (batch, h/8, w/8, 256)
-    concat_level2 = tf.keras.layers.Concatenate()([upsample_level2, resnet.get_layer('conv3_block4_out').output]);
+    concat_level2 = tf.keras.layers.Concatenate()([upsample_level2, out_layer2]);
     results = tf.keras.layers.Conv2D(128, (1,1), strides = (1,1), padding = 'same')(concat_level2);
     upsample_level3 = tf.keras.layers.UpSampling2D(size = (2,2), interpolation = 'bilinear')(results); # upsample_level3.shape = (batch, h/4, w/4, 128)
-    concat_level3 = tf.keras.layers.Concatenate()([upsample_level3, resnet.get_layer('conv2_block3_out').output]);
+    concat_level3 = tf.keras.layers.Concatenate()([upsample_level3, out_layer1]);
     upsample_level4 = tf.keras.layers.Conv2D(64, (1,1), strides = (1,1), padding = 'same')(concat_level3); # upsample_level4.shape = (batch, h/4, w/4, 64)
     outputs = list();
     if head_hidden_channels is not None:
@@ -57,6 +58,7 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, h
         results = tf.keras.layers.Lambda(lambda x: tf.math.reduce_sum(x[0] * x[1], axis = -1), name = head_name)([results, weights]); # results.shape = (batch, h/4, w/4, channels)
         outputs.append(results);
   else:
+    results = out_layer4;
     for i in range(3):
       results = tf.keras.layers.Conv2DTranspose(256, (4,4), strides = (2,2), padding = 'same', use_bias = False)(results);
       results = tf.keras.layers.BatchNormalization()(results);
@@ -72,22 +74,22 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, h
     else:
       for head_name, channels in heads_output_channels.items():
         outputs.append(tf.keras.layers.Conv2D(channels, (1,1), padding = 'same', name = head_name)(results));
-  return tf.keras.Model(inputs = inputs, outputs = outputs);
+  return tf.keras.Model(inputs = inputs, outputs = outputs, **kwargs);
 
 if __name__ == "__main__":
   import numpy as np;
   inputs = np.random.normal(size = (4, 608, 608, 3));
-  poseresnet = PoseResNet(use_fpn = False, head_hidden_channels = None);
+  poseresnet = PoseResNet(use_fpn = False, head_hidden_channels = None, name = 'poseresnet1');
   outputs = poseresnet(inputs)
   print([o.shape for o in outputs]);
-  poseresnet = PoseResNet(use_fpn = False, head_hidden_channels = 64);
+  poseresnet = PoseResNet(use_fpn = False, head_hidden_channels = 64, name = 'poseresnet2');
   outputs = poseresnet(inputs)
   print([o.shape for o in outputs]);
   tf.keras.utils.plot_model(poseresnet, to_file = 'poseresnet.png', expand_nested = True);
-  poseresnet = PoseResNet(use_fpn = True, head_hidden_channels = None);
+  poseresnet = PoseResNet(use_fpn = True, head_hidden_channels = None, name = 'poseresnet3');
   outputs = poseresnet(inputs)
   print([o.shape for o in outputs]);
-  poseresnet = PoseResNet(use_fpn = True, head_hidden_channels = 64);
+  poseresnet = PoseResNet(use_fpn = True, head_hidden_channels = 64, name = 'poseresnet4');
   outputs = poseresnet(inputs)
   print([o.shape for o in outputs]);
   tf.keras.utils.plot_model(poseresnet, to_file = 'poseresnet_fpn.png', expand_nested = True);
