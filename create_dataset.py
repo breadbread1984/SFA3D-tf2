@@ -77,7 +77,7 @@ class KittiDataset(object):
           # v2c = [R|t], c2v = [R'|-R'*t]
           c2v = np.zeros_like(v2c); c2v[:3,:3] = v2c[:3,:3].transpose(); c2v[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
           # 4) load label (object boxes)
-          labels = np.zeros((0,8), dtype = np.float32);
+          labels = np.zeros((0,8), dtype = np.float32); # labels.shape = (0, 8)
           for line in open(label_path, 'r'):
             line_parts = line.strip().split(' ');
             cat_id = self.CLASS_NAME_TO_ID[line_parts[0]];
@@ -100,40 +100,40 @@ class KittiDataset(object):
             ry = -rz - np.pi / 2;
             # NOTE: object_label = (object category, center x,y,z, box h, w, l, yaw relative to lidar coord)
             object_label = np.array([cat_id, x, y, z, h, w, l, ry], dtype = np.float32);
-            labels = np.concatenate([labels, np.expand_dims(object_label, axis = 0)], axis = 0);
+            labels = np.concatenate([labels, np.expand_dims(object_label, axis = 0)], axis = 0); # labels.shape = (N, 8)
           # 5) augmentation
           if np.random.uniform() < 0.66:
             if np.random.randint(low = 0, high = 2) == 0:
               # random rotation in range [-pi/4, pi/4]
               angle = np.random.uniform(low = -np.pi/4, high = np.pi/4);
-              # point transform
-              points = np.hstack([lidar_data[:,0:3],np.ones((lidar_data[0:3].shape[0],1))]);
               rot = np.eyes(4);
               rot[0,0] = np.cos(angle); rot[0,1] = -np.sin(angle);
               rot[1,0] = np.sin(angle); rot[1,1] = np.cos(angle);
+              # 1) point cloud rotation
+              points = np.hstack([lidar_data[:,0:3],np.ones((lidar_data[0:3].shape[0],1))]);
               lidar_data[:,0:3] = np.matmul(points, rot)[:, 0:3];
-              # box transform
+              # 2) boxes rotation
               for object_label in labels:
-                # convert center coordinate and box size to box corner coordinates
+                # object_label.shape = (8,) in sequence of cls_id,x,y,z,h,w,l,ry
+                # 2.1) convert center coordinate and box dimension to box corner coordinates
                 translation = object_label[1:4]; # translation.shape = (3,)
                 h,w,l = tuple(object_label[4:7].tolist()); # size.shape = (3,)
-                rotation = [0,0, object_label[-1]]; # yaw.shape = (3,)
+                yaw = object_label[-1]; # yaw.shape = (,)
                 # NOTE: trackleBox is 3d coordinates of eight corners
                 trackletBox = np.array([  # in velodyne coordinates around zero point and without orientation yet
                   [-l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2], \
                   [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2], \
                   [0, 0, 0, 0, h, h, h, h]]); # trackletBox.shape = (3,8)
-                yaw = rotation[-1];
                 rotMat = np.array([
                   [np.cos(yaw), -np.sin(yaw), 0.0],
                   [np.sin(yaw), np.cos(yaw), 0.0],
                   [0.0, 0.0, 1.0]]); # rotMat.shape = (3, 3)
                 cornerPosInVelo = np.dot(rotMat, trackletBox) + np.tile(translation, (8, 1)).T; # cornerPosInVelo.shape = (3,8)
                 box3d = cornerPosInVelo.transpose(); # box3d.shape = (8,3)
-                # rotate eight corners
+                # 2.2) rotate eight corners
                 points = np.hstack([box3d, np.ones((box3d.shape[0],1))]); # points.shape = (8,4)
                 box3d = np.matmul(points, rot)[:, 0:3]; # points.shape = (8,3)
-                # convert box corner coordinates back to center coordinate and box size
+                # 2.3) convert box corner coordinates back to center coordinate and box dimension
                 points = np.hstack([box3d, np.ones((box3d.shape[0],1))]).T; # points.shape = (8,4)
                 points = np.matmul(self.Tr_velo_to_cam, points); # points.shape = (4,8)
                 roi = np.matmul(self.R0, points).T[:,0:3]; # points.shape = (8,3)
@@ -169,6 +169,7 @@ class KittiDataset(object):
                 elif l > w:
                   l, w = w, l;
                   ry = ry - np.pi / 2;
+                # 2.4) from RGB camera coord to velodyn camera coord
                 p = np.array([x,y,z,1]);
                 p = np.matmul(self.R0_inv, p);
                 p = np.matmul(self.Tr_velo_to_cam_inv, p)[0:3];
