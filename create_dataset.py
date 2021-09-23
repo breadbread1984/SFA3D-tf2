@@ -115,7 +115,7 @@ class KittiDataset(object):
               # 2) boxes rotation
               for object_label in labels:
                 # object_label.shape = (8,) in sequence of cls_id,x,y,z,h,w,l,ry
-                # 2.1) convert center coordinate and box dimension to box corner coordinates
+                # 2.1) convert center coordinate and box dimension to box corner coordinates in RGB camera coord
                 translation = object_label[1:4]; # translation.shape = (3,)
                 h,w,l = tuple(object_label[4:7].tolist()); # size.shape = (3,)
                 yaw = object_label[-1]; # yaw.shape = (,)
