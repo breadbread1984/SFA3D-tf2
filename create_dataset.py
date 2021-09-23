@@ -17,6 +17,18 @@ class KittiDataset(object):
     'Misc': -99,
     'DontCare': -1
   };
+  Tr_velo_to_cam = np.array([
+    [7.49916597e-03, -9.99971248e-01, -8.65110297e-04, -6.71807577e-03],
+    [1.18652889e-02, 9.54520517e-04, -9.99910318e-01, -7.33152811e-02],
+    [9.99882833e-01, 7.49141178e-03, 1.18719929e-02, -2.78557062e-01],
+    [0, 0, 0, 1]
+  ]);
+  R0 = np.array([
+    [0.99992475, 0.00975976, -0.00734152, 0],
+    [-0.0097913, 0.99994262, -0.00430371, 0],
+    [0.00729911, 0.0043753, 0.99996319, 0],
+    [0, 0, 0, 1]
+  ]);
   def __init__(self, data_dir, hm_size, num_classes, max_objects):
     self.data_dir = data_dir;
     self.hm_size = hm_size;
@@ -92,26 +104,65 @@ class KittiDataset(object):
               rot = np.eyes(4);
               rot[0,0] = np.cos(angle); rot[0,1] = -np.sin(angle);
               rot[1,0] = np.sin(angle); rot[1,1] = np.cos(angle);
-              lidar_data[:,0:3] = np.matmul(points, rot);
+              lidar_data[:,0:3] = np.matmul(points, rot)[:, 0:3];
               # box transform
-              ret = np.zeros((0,8), dtype = np.float32);
               for object_label in labels:
-                translation = object_label[1:4]; # center
-                h,w,l = tuple(object_label[4:7].tolist()); # size
-                rotation = [0,0, object_label[-1]]; # yaw angle
+                # convert center coordinate and box size to box corner coordinates
+                translation = object_label[1:4]; # translation.shape = (3,)
+                h,w,l = tuple(object_label[4:7].tolist()); # size.shape = (3,)
+                rotation = [0,0, object_label[-1]]; # yaw.shape = (3,)
+                # NOTE: trackleBox is 3d coordinates of eight corners
                 trackletBox = np.array([  # in velodyne coordinates around zero point and without orientation yet
                   [-l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2], \
                   [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2], \
-                  [0, 0, 0, 0, h, h, h, h]]);
+                  [0, 0, 0, 0, h, h, h, h]]); # trackletBox.shape = (3,8)
                 yaw = rotation[-1];
                 rotMat = np.array([
                   [np.cos(yaw), -np.sin(yaw), 0.0],
                   [np.sin(yaw), np.cos(yaw), 0.0],
-                  [0.0, 0.0, 1.0]]);
-                cornerPosInVelo = np.dot(rotMat, trackletBox) + np.tile(translation, (8, 1)).T;
-                box3d = cornerPosInVelo.transpose();
-                ret = np.concatenate([ret, np.expand_dims(box3d, axis = 0)], axis = 0);
-              labels = ret
+                  [0.0, 0.0, 1.0]]); # rotMat.shape = (3, 3)
+                cornerPosInVelo = np.dot(rotMat, trackletBox) + np.tile(translation, (8, 1)).T; # cornerPosInVelo.shape = (3,8)
+                box3d = cornerPosInVelo.transpose(); # box3d.shape = (8,3)
+                # rotate eight corners
+                points = np.hstack([box3d, np.ones((box3d.shape[0],1))]); # points.shape = (8,4)
+                box3d = np.matmul(points, rot)[:, 0:3]; # points.shape = (8,3)
+                # convert box corner coordinates back to center coordinate and box size
+                points = np.hstack([box3d, np.ones((box3d.shape[0],1))]).T; # points.shape = (8,4)
+                points = np.matmul(self.Tr_velo_to_cam, points); # points.shape = (4,8)
+                roi = np.matmul(self.R0, points).T[:,0:3]; # points.shape = (8,3)
+                h = abs(np.sum(roi[:4, 1] - roi[4:, 1]) / 4);
+                w = np.sum(
+                  np.sqrt(np.sum((roi[0, [0, 2]] - roi[3, [0, 2]]) ** 2)) +
+                  np.sqrt(np.sum((roi[1, [0, 2]] - roi[2, [0, 2]]) ** 2)) +
+                  np.sqrt(np.sum((roi[4, [0, 2]] - roi[7, [0, 2]]) ** 2)) +
+                  np.sqrt(np.sum((roi[5, [0, 2]] - roi[6, [0, 2]]) ** 2))
+                ) / 4;
+                l = np.sum(
+                  np.sqrt(np.sum((roi[0, [0, 2]] - roi[1, [0, 2]]) ** 2)) +
+                  np.sqrt(np.sum((roi[2, [0, 2]] - roi[3, [0, 2]]) ** 2)) +
+                  np.sqrt(np.sum((roi[4, [0, 2]] - roi[5, [0, 2]]) ** 2)) +
+                  np.sqrt(np.sum((roi[6, [0, 2]] - roi[7, [0, 2]]) ** 2))
+                ) / 4;
+                x = np.sum(roi[:, 0], axis=0) / 8;
+                y = np.sum(roi[0:4, 1], axis=0) / 4;
+                z = np.sum(roi[:, 2], axis=0) / 8;
+                ry = np.sum(
+                  math.atan2(roi[2, 0] - roi[1, 0], roi[2, 2] - roi[1, 2]) +
+                  math.atan2(roi[6, 0] - roi[5, 0], roi[6, 2] - roi[5, 2]) +
+                  math.atan2(roi[3, 0] - roi[0, 0], roi[3, 2] - roi[0, 2]) +
+                  math.atan2(roi[7, 0] - roi[4, 0], roi[7, 2] - roi[4, 2]) +
+                  math.atan2(roi[0, 2] - roi[1, 2], roi[1, 0] - roi[0, 0]) +
+                  math.atan2(roi[4, 2] - roi[5, 2], roi[5, 0] - roi[4, 0]) +
+                  math.atan2(roi[3, 2] - roi[2, 2], roi[2, 0] - roi[3, 0]) +
+                  math.atan2(roi[7, 2] - roi[6, 2], roi[6, 0] - roi[7, 0])
+                ) / 8;
+                if w > l:
+                  w, l = l, w;
+                  ry = ry - np.pi / 2;
+                elif l > w:
+                  l, w = w, l;
+                  ry = ry - np.pi / 2;
+                # TODO
             else:
               # random scaling
               
