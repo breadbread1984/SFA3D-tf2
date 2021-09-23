@@ -29,6 +29,18 @@ class KittiDataset(object):
     [0.00729911, 0.0043753, 0.99996319, 0],
     [0, 0, 0, 1]
   ]);
+  Tr_velo_to_cam_inv = np.linalg.inv(np.array([
+    [7.49916597e-03, -9.99971248e-01, -8.65110297e-04, -6.71807577e-03],
+    [1.18652889e-02, 9.54520517e-04, -9.99910318e-01, -7.33152811e-02],
+    [9.99882833e-01, 7.49141178e-03, 1.18719929e-02, -2.78557062e-01],
+    [0, 0, 0, 1]
+  ]));
+  R0_inv = np.linalg.inv(np.array([
+    [0.99992475, 0.00975976, -0.00734152, 0],
+    [-0.0097913, 0.99994262, -0.00430371, 0],
+    [0.00729911, 0.0043753, 0.99996319, 0],
+    [0, 0, 0, 1]
+  ]));
   def __init__(self, data_dir, hm_size, num_classes, max_objects):
     self.data_dir = data_dir;
     self.hm_size = hm_size;
@@ -162,10 +174,20 @@ class KittiDataset(object):
                 elif l > w:
                   l, w = w, l;
                   ry = ry - np.pi / 2;
-                # TODO
+                p = np.array([x,y,z,1]);
+                p = np.matmul(self.R0_inv, p);
+                p = np.matmul(self.Tr_velo_to_cam_inv, p)[0:3];
+                rz = -ry - np.pi / 2;
+                object_label[1:4] = p;
+                object_label[4:7] = np.array([h,w,l]);
+                object_label[7] = rz;
             else:
-              # random scaling
-              
+              # random scaling in range [0.95, 1.05]
+              factor = np.random.uniform(0.95, 1.05);
+              lidar_data[:, 0:3] = lidar_data[:, 0:3] * factor; # scale x,y,z
+              labels[:, 1:7] = labels[:, 1:7] * factor; # scale x,y,z,h,w,l
+          yield lidar_data, labels;
     else:
+      
       # load image only
     return gen;
