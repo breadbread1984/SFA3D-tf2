@@ -69,19 +69,14 @@ class KittiDataset(object):
           # 3) load calib data
           with open(calib_path) as f:
             lines = f.readlines();
-          '''
-          P^2_rect = [f^2_u,  0,      c^2_u,  -f^2_u b^2_x;
-                      0,      f^2_v,  c^2_v,  -f^2_v b^2_y;
-                      0,      0,      1,      0]
-                   = K * [1|t]
-          '''
           p2 = np.array(lines[2].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # intrinsic matrix
           p3 = np.array(lines[3].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # extrinsic matrix
-          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rotation matrix from reference camera coord to rect camera coord
+          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rotation matrix from reference camera coord to rectified camera coord
           v2c = np.array(lines[5].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # velodyn coordinate to camera coordinate transform matrix
           r0_ext = np.eye(4); r0_ext[:3,:3] = r0;
-          inv_tr = np.zeros_like(v2c); inv_tr[:3,:3] = v2c[:3,:3].transpose(); inv_tr[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
-          # 4) load label
+          # v2c = [R|t], c2v = [R'|-R'*t]
+          c2v = np.zeros_like(v2c); c2v[:3,:3] = v2c[:3,:3].transpose(); c2v[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
+          # 4) load label (object boxes)
           labels = np.zeros((0,8), dtype = np.float32);
           for line in open(label_path, 'r'):
             line_parts = line.strip().split(' ');
@@ -92,14 +87,14 @@ class KittiDataset(object):
             alpha = float(line_parts[3]); # object observation angle [-pi..pi]
             # xmin, ymin, xmax, ymax
             bbox = np.array([float(line_parts[4]), float(line_parts[5]), float(line_parts[6]), float(line_parts[7])]);
-            # height, width, length (h, w, l)
+            # box dimension height, width, length (h, w, l)
             h, w, l = float(line_parts[8]), float(line_parts[9]), float(line_parts[10]);
-            # location (x,y,z) in camera coord.
+            # center (x,y,z) in camera coord.
             x, y, z = float(line_parts[11]), float(line_parts[12]), float(line_parts[13]);
-            # convert location in camera coord to lidar box
+            # convert location in camera coord to velodyn coord
             p = np.array([x,y,z,1]);
-            p = np.matmul(np.linalg.inv(r0_ext), p);
-            p = np.matmul(inv_tr, p);
+            p = np.matmul(np.linalg.inv(r0_ext), p); # rectified camera coord to RGB camera coord
+            p = np.matmul(c2v, p); # RGB camera coord to velodyn coord
             x, y, z = tuple(p[0:3].tolist());
             rz = float(line_parts[14]); # yaw angle [-pi..pi]
             ry = -rz - np.pi / 2;
