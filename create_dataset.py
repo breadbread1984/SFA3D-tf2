@@ -219,13 +219,18 @@ class KittiDataset(object):
             intensityMap = np.zeros((height, width)); # 
             densityMap = np.zeros((height, width));
             max_height = float(np.abs(self.boundary['maxZ'] - self.boundary['minZ']));
-            # normalize height map
+            # normalize depth map
             heightMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:,2] / max_height;
-            # minimum normalized unique x,y number
+            # normalized counts of every unique x,y
             normalizedCounts = np.minimum(1.0, np.log(unique_counts + 1) / np.log(64));
-            intensityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:, 3];
+            # intensity map
+            intensityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:,3];
+            # normalized unique count map (how many reflections per position)
             densityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = normalizedCounts;
-            
+            bev_map = np.stack([intensityMap[:self.input_shape[0],:self.input_shape[1]],
+                                heightMap[:self.input_shape[0],:self.input_shape[1]],
+                                densityMap[:self.input_shape[0],:self.input_shape[1]]], axis = -1); # rgb_map.shape = (height, width, 3)
+            # 5) random flip
           yield lidar_data, labels;
     else:
       def gen():
