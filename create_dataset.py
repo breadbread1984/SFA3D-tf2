@@ -49,11 +49,12 @@ class KittiDataset(object):
     "minZ": -2.73,
     "maxZ": 1.27
   };
-  def __init__(self, data_dir, hm_size, num_classes, max_objects):
+  def __init__(self, data_dir, hm_size, num_classes, max_objects, input_shape = (608, 608)):
     self.data_dir = data_dir;
     self.hm_size = hm_size;
     self.num_classes = num_classes;
     self.max_objects = max_objects;
+    self.input_shape = input_shape;
   def generator(self, mode = 'train'):
     assert mode in ['train', 'test', 'val'];
     sub_folder = 'training' if mode in ['train', 'val'] else 'testing';
@@ -190,18 +191,41 @@ class KittiDataset(object):
               factor = np.random.uniform(0.95, 1.05);
               lidar_data[:, 0:3] = lidar_data[:, 0:3] * factor; # scale x,y,z
               labels[:, 1:7] = labels[:, 1:7] * factor; # scale x,y,z,h,w,l
-            # clip lidar_data and labels
+            # 3) filtered lidar_data and labels outside boundary
             mask = np.where((lidar_data[:, 0] >= self.boundary['minX']) & (lidar_data[:, 0] <= self.boundary['maxX']) &
                             (lidar_data[:, 1] >= self.boundary['minY']) & (lidar_data[:, 1] <= self.boundary['maxY']) &
                             (lidar_data[:, 2] >= self.boundary['minZ']) & (lidar_data[:, 2] <= self.boundary['maxZ']));
-            lidar_data = lidar_data[mask];
+            lidar_data = lidar_data[mask]; # lidar_data.shape = (filtered point num, 3)
             lidar_data[:,2] = lidar_data[:,2] - self.boundary['minZ'];
             label_x = (labels[:, 1] >= self.boundary['minX']) & (labels[:, 1] < self.boundary['maxX']);
             label_y = (labels[:, 2] >= self.boundary['minY']) & (labels[:, 2] < self.boundary['maxY']);
             label_z = (labels[:, 3] >= self.boundary['minZ']) & (labels[:, 3] < self.boundary['maxZ']);
             mask_label = label_x & label_y & label_z;
-            labels = labels[mask_label];
-            # 
+            labels = labels[mask_label]; # labels.shape = (filtered target num, 8)
+            # 4) make bev map from lidar_data
+            height = self.input_shape[0] + 1;
+            width = self.input_shape[1] + 1;
+            pointcloud = np.copy(lidar_data);
+            discretization = (self.boundary["maxX"] - self.boundary["minX"]) / self.input_shape[0];
+            pointcloud[:, 0] = np.int_(np.floor(pointcloud[:,0] / discretization));
+            pointcloud[:, 1] = np.int_(np.floor(pointcloud[:,1] / discretization) + width / 2);
+            # sort points according to x,y,z values, z from large to small
+            sorted_indices = np.lexsort((-pointcloud[:,2], pointcloud[:,1], pointcloud[:,0]));
+            pointcloud = pointcloud[sorted_indices];
+            # only left unique x,y with largest z
+            _, unique_indices, unique_counts = np.unique(pointcloud[:, 0:2], axis = 0, return_index = True, return_counts = True);
+            pointcloud_top = pointcloud[unique_indices];
+            heightMap = np.zeros((height, width)); # depth map
+            intensityMap = np.zeros((height, width)); # 
+            densityMap = np.zeros((height, width));
+            max_height = float(np.abs(self.boundary['maxZ'] - self.boundary['minZ']));
+            # normalize height map
+            heightMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:,2] / max_height;
+            # minimum normalized unique x,y number
+            normalizedCounts = np.minimum(1.0, np.log(unique_counts + 1) / np.log(64));
+            intensityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:, 3];
+            densityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = normalizedCounts;
+            
           yield lidar_data, labels;
     else:
       def gen():
