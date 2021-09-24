@@ -41,6 +41,14 @@ class KittiDataset(object):
     [0.00729911, 0.0043753, 0.99996319, 0],
     [0, 0, 0, 1]
   ]));
+  boundary = {
+    "minX": 0,
+    "maxX": 50,
+    "minY": -25,
+    "maxY": 25,
+    "minZ": -2.73,
+    "maxZ": 1.27
+  };
   def __init__(self, data_dir, hm_size, num_classes, max_objects):
     self.data_dir = data_dir;
     self.hm_size = hm_size;
@@ -77,7 +85,7 @@ class KittiDataset(object):
           '''
           p2 = np.array(lines[2].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # intrinsic matrix
           p3 = np.array(lines[3].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # extrinsic matrix
-          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rotation matrix from reference camera coord to rect camera coord
+          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rotation matrix from RGB camera coord to velodyn camera coord
           v2c = np.array(lines[5].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # velodyn coordinate to camera coordinate transform matrix
           r0_ext = np.eye(4); r0_ext[:3,:3] = r0;
           inv_tr = np.zeros_like(v2c); inv_tr[:3,:3] = v2c[:3,:3].transpose(); inv_tr[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
@@ -92,11 +100,11 @@ class KittiDataset(object):
             alpha = float(line_parts[3]); # object observation angle [-pi..pi]
             # xmin, ymin, xmax, ymax
             bbox = np.array([float(line_parts[4]), float(line_parts[5]), float(line_parts[6]), float(line_parts[7])]);
-            # height, width, length (h, w, l)
+            # box dimension height, width, length (h, w, l)
             h, w, l = float(line_parts[8]), float(line_parts[9]), float(line_parts[10]);
-            # location (x,y,z) in camera coord.
+            # box center (x,y,z) in RGB camera coord.
             x, y, z = float(line_parts[11]), float(line_parts[12]), float(line_parts[13]);
-            # convert location in camera coord to lidar box
+            # convert camera coord to lidar coord
             p = np.array([x,y,z,1]);
             p = np.matmul(np.linalg.inv(r0_ext), p);
             p = np.matmul(inv_tr, p);
@@ -186,8 +194,21 @@ class KittiDataset(object):
               factor = np.random.uniform(0.95, 1.05);
               lidar_data[:, 0:3] = lidar_data[:, 0:3] * factor; # scale x,y,z
               labels[:, 1:7] = labels[:, 1:7] * factor; # scale x,y,z,h,w,l
+            # clip lidar_data and labels
+            mask = np.where((lidar_data[:, 0] >= self.boundary['minX']) & (lidar_data[:, 0] <= self.boundary['maxX']) &
+                            (lidar_data[:, 1] >= self.boundary['minY']) & (lidar_data[:, 1] <= self.boundary['maxY']) &
+                            (lidar_data[:, 2] >= self.boundary['minZ']) & (lidar_data[:, 2] <= self.boundary['maxZ']));
+            lidar_data = lidar_data[mask];
+            lidar_data[:,2] = lidar_data[:,2] - self.boundary['minZ'];
+            label_x = (labels[:, 1] >= self.boundary['minX']) & (labels[:, 1] < self.boundary['maxX']);
+            label_y = (labels[:, 2] >= self.boundary['minY']) & (labels[:, 2] < self.boundary['maxY']);
+            label_z = (labels[:, 3] >= self.boundary['minZ']) & (labels[:, 3] < self.boundary['maxZ']);
+            mask_label = label_x & label_y & label_z;
+            labels = labels[mask_label];
+            # 
           yield lidar_data, labels;
     else:
-      
+      def gen():
+        
       # load image only
     return gen;
