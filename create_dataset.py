@@ -2,6 +2,7 @@
 
 from os.path import join;
 import numpy as np;
+from scipy.optimize import fsolve;
 import cv2;
 import tensorflow as tf;
 
@@ -262,22 +263,25 @@ class KittiDataset(object):
               bbox_w = w / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
               height, width = np.ceil(bbox_l), np.ceil(bbox_w);
               # get radius
+              # larger solution of x^2 - (height + width) x + (width * height * (1 - 0.7) / (1 + 0.7)) = 0
               a1 = 1;
               b1 = height + width;
               c1 = width * height * (1 - 0.7) / (1 + 0.7);
               sq1 = np.sqrt(b1 ** 2 - 4 * a1 * c1);
               r1 = (b1 + sq1) / 2;
+              # larger solution of 4 x^2 - 2 * (height + width) x + (1 - 0.7) * width * height = 0
               a2 = 4;
               b2 = 2 * (height + width);
               c2 = (1 - 0.7) * width * height;
               sq2 = np.sqrt(b2 ** 2 - 4 * a2 * c2);
               r2 = (b2 + sq2) / 2;
+              # larger solution of 4 * 0.7 x^2 + 2 * 0.7 * (height + width) x + (0.7 - 1) * width * height = 0
               a3 = 4 * 0.7;
               b3 = -2 * 0.7 * (height + width);
               c3 = (0.7 - 1) * width * height;
               sq3 = np.sqrt(b3 ** 2 - 4 * a3 * c3);
               r3 = (b3 + sq3) / 2;
-              radius = min(r1, r2, r3);
+              radius = max(0, int(min(r1, r2, r3)));
               
           yield lidar_data, labels;
     else:
