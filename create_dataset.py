@@ -50,8 +50,11 @@ class KittiDataset(object):
     "maxZ": 1.27
   };
   def __init__(self, data_dir, hm_size, num_classes, max_objects, input_shape = (608, 608)):
+    assert type(data_dir) is str;
+    assert type(hm_size) is tuple and len(hm_size) == 2;
+    assert type(num_classes) is int;
     self.data_dir = data_dir;
-    self.hm_size = hm_size;
+    self.hm_size = hm_size; # treat h l regression as classification. how many classes for h and how many classes for l
     self.num_classes = num_classes;
     self.max_objects = max_objects;
     self.input_shape = input_shape;
@@ -230,7 +233,52 @@ class KittiDataset(object):
             bev_map = np.stack([intensityMap[:self.input_shape[0],:self.input_shape[1]],
                                 heightMap[:self.input_shape[0],:self.input_shape[1]],
                                 densityMap[:self.input_shape[0],:self.input_shape[1]]], axis = -1); # rgb_map.shape = (height, width, 3)
-            # 5) random flip
+            # 5) random horizontal flip
+            flip = True if np.random.uniform() < 0.5 else False;
+            if flip: bev_map = bev_map[:,::-1,:];
+            # 6) generate labels
+            num_objects = min(len(labels), self.max_objects);
+            hm_l, hm_w = self.hm_size;
+            hm_main_center = np.zeros((self.num_classes, hm_l, hm_w), dtype = np.float32);
+            cen_offset = np.zeros((self.max_objects, 2), dtype = np.float32);
+            direction = np.zeros((self.max_objects, 2), dtype = np.float32);
+            z_coor = np.zeros((self.max_objects, 1), dtype = np.float32);
+            dimension = np.zeros((self.max_objects, 3), dtype = np.float32);
+            
+            indices_center = np.zeros((self.max_objects), dtype = np.int64);
+            obj_mask = np.zeros((self.max_objects), dtype = np.uint8);
+            for k in range(num_objects):
+              cls_id, x, y, z, h, w, l, yaw = labels[k];
+              cls_id = int(cls_id);
+              yaw = -yaw;
+              # discard invalid label
+              if not (self.boundary['minX'] <= x <= self.boundary['maxX'] and \
+                      self.boundary['minY'] <= y <= self.boundary['maxY'] and \
+                      self.boundary['minZ'] <= z <= self.boundary['maxZ']):
+                continue;
+              if h <= 0 or w <= 0 or l <= 0: continue;
+              # quantilize l and w
+              bbox_l = l / (self.boundary['maxX'] - self.boundary['minX']) * hm_l;
+              bbox_w = w / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
+              height, width = np.ceil(bbox_l), np.ceil(bbox_w);
+              # get radius
+              a1 = 1;
+              b1 = height + width;
+              c1 = width * height * (1 - 0.7) / (1 + 0.7);
+              sq1 = np.sqrt(b1 ** 2 - 4 * a1 * c1);
+              r1 = (b1 + sq1) / 2;
+              a2 = 4;
+              b2 = 2 * (height + width);
+              c2 = (1 - 0.7) * width * height;
+              sq2 = np.sqrt(b2 ** 2 - 4 * a2 * c2);
+              r2 = (b2 + sq2) / 2;
+              a3 = 4 * 0.7;
+              b3 = -2 * 0.7 * (height + width);
+              c3 = (0.7 - 1) * width * height;
+              sq3 = np.sqrt(b3 ** 2 - 4 * a3 * c3);
+              r3 = (b3 + sq3) / 2;
+              radius = min(r1, r2, r3);
+              
           yield lidar_data, labels;
     else:
       def gen():
