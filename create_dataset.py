@@ -282,7 +282,8 @@ class KittiDataset(object):
               sq3 = np.sqrt(b3 ** 2 - 4 * a3 * c3);
               r3 = (b3 + sq3) / 2;
               radius = max(0, int(min(r1, r2, r3)));
-              
+              # 
+              center_y = (x - self.boundary['minX']) / 
           yield lidar_data, labels;
     else:
       def gen():
