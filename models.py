@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+from os import mkdir;
+from os.path import exists;
+import wget;
 import tensorflow as tf;
 
 def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, head_hidden_channels = 64, heads_output_channels = {'hm_cen': 3, 'cen_offset': 2, 'direction': 2, 'z_coor': 1, 'dim': 3}, **kwargs):
@@ -7,20 +10,39 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, h
   assert type(num_resnet_layers) is int and num_resnet_layers in [18, 34, 50, 101, 152];
   assert head_hidden_channels is None or type(head_hidden_channels) is int;
   if num_resnet_layers == 18:
-    raise Exception('unimplemented!');
-    # FIXME: load pretrained model when available
+    is not exists('models'): mkdir('models');
+    # FIXME: change the url
+    filename = wget.download('resnet18.h5', out = 'models');
+    resnet = tf.keras.models.load_model(join('models', 'resnet18.h5'));
+    output1 = resnet.get_layer('model_1').output;
+    output2 = resnet.get_layer('model_3').output;
+    output3 = resnet.get_layer('model_5').output;
   elif num_resnet_layers == 34:
-    raise Exception('unimplemented!');
-    # FIXME: load pretrained model when available
+    if not exists('models'): mkdir('models');
+    # FIXME: change the url
+    filename = wget.download('resnet34.h5', out = 'models');
+    resnet = tf.keras.models.load_model(join('models', 'resnet34.h5'));
+    output1 = resnet.get_layer('model_2').output;
+    output2 = resnet.get_layer('model_6').output;
+    output3 = resnet.get_layer('model_12').output;
   elif num_resnet_layers == 50:
     resnet = tf.keras.applications.ResNet50(input_shape = (img_shape[0], img_shape[1], 3), include_top = False, weights = 'imagenet');
+    output1 = resnet.get_layer('conv2_block3_out').output;
+    output2 = resnet.get_layer('conv3_block4_out').output;
+    output3 = resnet.get_layer('conv4_block6_out').output;
   elif num_resnet_layers == 101:
     resnet = tf.keras.applications.resnet.ResNet101(input_shape = (img_shape[0], img_shape[1], 3), include_top = False, weights = 'imagenet');
+    output1 = resnet.get_layer('conv2_block3_out').output;
+    output2 = resnet.get_layer('conv3_block4_out').output;
+    output3 = resnet.get_layer('conv4_block23_out').output;
   elif num_resnet_layers == 152:
     resnet = tf.keras.applications.resnet.ResNet152(input_shape = (img_shape[0], img_shape[1], 3), include_top = False, weights = 'imagenet');
+    output1 = resnet.get_layer('conv2_block3_out').output;
+    output2 = resnet.get_layer('conv3_block8_out').output;
+    output3 = resnet.get_layer('conv4_block36_out').output;
   else:
     raise Exception('unknown configuration!');
-  model = tf.keras.Model(inputs = resnet.inputs, outputs = [resnet.get_layer('conv2_block3_out').output, resnet.get_layer('conv3_block4_out').output, resnet.get_layer('conv4_block6_out').output] + list(resnet.outputs));
+  model = tf.keras.Model(inputs = resnet.inputs, outputs = [output1, output2, output3] + list(resnet.outputs));
   inputs = tf.keras.Input((img_shape[0], img_shape[1], 3)); # inputs.shape = (batch, h, w, c)
   out_layer1, out_layer2, out_layer3, out_layer4 = model(inputs); # results.shape = (batch, h/32, w/32, 2048)
   if use_fpn:
