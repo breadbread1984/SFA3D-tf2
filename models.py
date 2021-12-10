@@ -5,7 +5,7 @@ from os.path import exists;
 import wget;
 import tensorflow as tf;
 
-def PoseResNet(img_shape = (608, 608), num_resnet_layers = 50, use_fpn = True, head_hidden_channels = 64, heads_output_channels = {'hm_cen': 3, 'cen_offset': 2, 'direction': 2, 'z_coor': 1, 'dim': 3}, **kwargs):
+def PoseResNet(img_shape = (608, 608), num_resnet_layers = 18, use_fpn = True, head_hidden_channels = 64, heads_output_channels = {'hm_cen': 3, 'cen_offset': 2, 'direction': 2, 'z_coor': 1, 'dim': 3}, **kwargs):
   assert type(img_shape) in [list, tuple] and len(img_shape) == 2;
   assert type(num_resnet_layers) is int and num_resnet_layers in [18, 34, 50, 101, 152];
   assert head_hidden_channels is None or type(head_hidden_channels) is int;
