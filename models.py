@@ -17,6 +17,7 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 18, use_fpn = True, h
     output1 = resnet.get_layer('model_1').output;
     output2 = resnet.get_layer('model_3').output;
     output3 = resnet.get_layer('model_5').output;
+    output4 = resnet.get_layer('model_7').output;
   elif num_resnet_layers == 34:
     if not exists('models'): mkdir('models');
     # FIXME: change the url
@@ -25,24 +26,28 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 18, use_fpn = True, h
     output1 = resnet.get_layer('model_2').output;
     output2 = resnet.get_layer('model_6').output;
     output3 = resnet.get_layer('model_12').output;
+    output4 = resnet.get_layer('model_15').output;
   elif num_resnet_layers == 50:
     resnet = tf.keras.applications.ResNet50(input_shape = (img_shape[0], img_shape[1], 3), include_top = False, weights = 'imagenet');
     output1 = resnet.get_layer('conv2_block3_out').output;
     output2 = resnet.get_layer('conv3_block4_out').output;
     output3 = resnet.get_layer('conv4_block6_out').output;
+    output4 = resnet.get_layer('conv5_block3_out').output;
   elif num_resnet_layers == 101:
     resnet = tf.keras.applications.resnet.ResNet101(input_shape = (img_shape[0], img_shape[1], 3), include_top = False, weights = 'imagenet');
     output1 = resnet.get_layer('conv2_block3_out').output;
     output2 = resnet.get_layer('conv3_block4_out').output;
     output3 = resnet.get_layer('conv4_block23_out').output;
+    output4 = resnet.get_layer('conv5_block3_out').output;
   elif num_resnet_layers == 152:
     resnet = tf.keras.applications.resnet.ResNet152(input_shape = (img_shape[0], img_shape[1], 3), include_top = False, weights = 'imagenet');
     output1 = resnet.get_layer('conv2_block3_out').output;
     output2 = resnet.get_layer('conv3_block8_out').output;
     output3 = resnet.get_layer('conv4_block36_out').output;
+    output4 = resnet.get_layer('conv5_block3_out').output;
   else:
     raise Exception('unknown configuration!');
-  model = tf.keras.Model(inputs = resnet.inputs, outputs = [output1, output2, output3] + list(resnet.outputs));
+  model = tf.keras.Model(inputs = resnet.inputs, outputs = [output1, output2, output3, output4]);
   inputs = tf.keras.Input((img_shape[0], img_shape[1], 3)); # inputs.shape = (batch, h, w, c)
   out_layer1, out_layer2, out_layer3, out_layer4 = model(inputs); # results.shape = (batch, h/32, w/32, 2048)
   if use_fpn:
