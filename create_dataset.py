@@ -85,17 +85,18 @@ class KittiDataset(object):
             lines = f.readlines();
           p2 = np.array(lines[2].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # camera 0 (left grayscale) camera coordinate to camera 2 (left color) image coordinate projection
           p3 = np.array(lines[3].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # camera 0 (left grayscale) camera coordinate to camera 3 (right color) image coordinate projection
-          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rotation matrix from velodyn (laser) camera coordinate to camera 0 (left grayscale) camera coordinate
+          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rectify matrix of camera 0 (left grayscale) camera coordinate
           v2c = np.array(lines[5].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # velodyn (laser) camera coordinate to camera 0 (left grayscale) image coordinate projection
           r0_ext = np.eye(4); r0_ext[:3,:3] = r0;
           # v2c = [R|t], c2v = inv(v2c) = [R'|-R'*t]
+          # camera 0 (left grayscale) camera coordinate to velodyn (laser) camera coordinate
           c2v = np.zeros_like(v2c); c2v[:3,:3] = v2c[:3,:3].transpose(); c2v[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
           # 4) load label (object boxes)
           labels = np.zeros((0,8), dtype = np.float32); # labels.shape = (0, 8)
           for line in open(label_path, 'r'):
             line_parts = line.strip().split(' ');
-            cat_id = self.CLASS_NAME_TO_ID[line_parts[0]];
-            if cat_id <= -99: continue;
+            cat_id = self.CLASS_NAME_TO_ID[line_parts[0]]; # object category
+            if cat_id <= -99: continue; # ignore Tram and Misc
             truncated = int(float(line_parts[1])); # truncated pixel ratio [0..1]
             occluded = int(line_parts[2]); # 0=visible,1=partly occluded, 2=fully occluded, 3=unknown
             alpha = float(line_parts[3]); # object observation angle [-pi..pi]
@@ -103,14 +104,14 @@ class KittiDataset(object):
             bbox = np.array([float(line_parts[4]), float(line_parts[5]), float(line_parts[6]), float(line_parts[7])]);
             # box dimension height, width, length (h, w, l)
             h, w, l = float(line_parts[8]), float(line_parts[9]), float(line_parts[10]);
-            # center (x,y,z) in camera coord.
+            # center (x,y,z) in camera 0 camera coordinate.
             x, y, z = float(line_parts[11]), float(line_parts[12]), float(line_parts[13]);
             # convert location in camera coord to velodyn coord
-            p = np.array([x,y,z,1]);
-            p = np.matmul(np.linalg.inv(r0_ext), p); # rectified camera coord to RGB camera coord
-            p = np.matmul(c2v, p); # RGB camera coord to velodyn coord
+            p = np.array([x,y,z,1]); # unrectified coordinate in camera 0 (left grayscale) camera coordinate
+            p = np.matmul(np.linalg.inv(r0_ext), p); # rectified coordinate in camera 0 camera coordinate
+            p = np.matmul(c2v, p); # camera 0 camera coordinate to velodyn camera coordinate
             x, y, z = tuple(p[0:3].tolist());
-            rz = float(line_parts[14]); # yaw angle [-pi..pi]
+            rz = float(line_parts[14]); # yaw angle [-pi..pi] rotated over y of camera 0 (z of velodyn)
             ry = -rz - np.pi / 2;
             # NOTE: object_label = (object category, center x,y,z, box h, w, l, yaw relative to lidar coord)
             object_label = np.array([cat_id, x, y, z, h, w, l, ry], dtype = np.float32);
