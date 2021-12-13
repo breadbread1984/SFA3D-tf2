@@ -113,21 +113,21 @@ class KittiDataset(object):
             x, y, z = tuple(p[0:3].tolist());
             rz = float(line_parts[14]); # yaw angle [-pi..pi] rotated over y of camera 0 (z of velodyn)
             ry = -rz - np.pi / 2; # to yaw of velodyn coordinate
-            # NOTE: object_label = (object category, center x,y,z, box h, w, l, yaw relative to lidar coord)
+            # NOTE: object_label = (object category, center x,y,z, box h, w, l, yaw) in velodyn camera coordinate
             object_label = np.array([cat_id, x, y, z, h, w, l, ry], dtype = np.float32);
             labels = np.concatenate([labels, np.expand_dims(object_label, axis = 0)], axis = 0); # labels.shape = (N, 8)
           # 5) augmentation
           if np.random.uniform() < 0.66:
             # augmentation happens with probability of 0.66
             if np.random.randint(low = 0, high = 2) == 0:
-              # random rotation in range [-pi/4, pi/4]
+              # cloud point random rotation in range [-pi/4, pi/4] with respect to z-axis (yaw) of velodyn camera coordinate
               angle = np.random.uniform(low = -np.pi/4, high = np.pi/4);
               rot = np.eyes(4);
               rot[0,0] = np.cos(angle); rot[0,1] = -np.sin(angle);
               rot[1,0] = np.sin(angle); rot[1,1] = np.cos(angle);
-              # 1) point cloud rotation
-              points = np.hstack([lidar_data[:,0:3],np.ones((lidar_data[0:3].shape[0],1))]);
-              lidar_data[:,0:3] = np.matmul(points, rot)[:, 0:3];
+              # 1) point cloud rotation along z-axis of velodyn camera coordinate
+              points = np.hstack([lidar_data[:,0:3],np.ones((lidar_data.shape[0],1))]); # points.shape = (point number, 4)
+              lidar_data[:, 0:3] = np.matmul(points, rot)[:, 0:3]; # lidar_data.shape = (point number, 3)
               # 2) boxes rotation
               for object_label in labels:
                 # object_label.shape = (8,) in sequence of cls_id,x,y,z,h,w,l,ry
@@ -149,7 +149,7 @@ class KittiDataset(object):
                 # 2.2) rotate eight corners
                 points = np.hstack([box3d, np.ones((box3d.shape[0],1))]); # points.shape = (8,4)
                 box3d = np.matmul(points, rot)[:, 0:3]; # points.shape = (8,3)
-                # 2.3) convert box corner coordinates back to center coordinate and box dimension
+                # 2.3) convert box corner coordinates in velodyn coordinate to camera 0 camera coordinate
                 points = np.hstack([box3d, np.ones((box3d.shape[0],1))]).T; # points.shape = (8,4)
                 points = np.matmul(self.Tr_velo_to_cam, points); # points.shape = (4,8)
                 roi = np.matmul(self.R0, points).T[:,0:3]; # points.shape = (8,3)
@@ -185,7 +185,7 @@ class KittiDataset(object):
                 elif l > w:
                   l, w = w, l;
                   ry = ry - np.pi / 2;
-                # 2.4) from RGB camera coord to velodyn camera coord
+                # 2.4) from camera 0 coord to velodyn camera coord
                 p = np.array([x,y,z,1]);
                 p = np.matmul(self.R0_inv, p);
                 p = np.matmul(self.Tr_velo_to_cam_inv, p)[0:3];
