@@ -112,12 +112,13 @@ class KittiDataset(object):
             p = np.matmul(c2v, p); # camera 0 camera coordinate to velodyn camera coordinate
             x, y, z = tuple(p[0:3].tolist());
             rz = float(line_parts[14]); # yaw angle [-pi..pi] rotated over y of camera 0 (z of velodyn)
-            ry = -rz - np.pi / 2;
+            ry = -rz - np.pi / 2; # to yaw of velodyn coordinate
             # NOTE: object_label = (object category, center x,y,z, box h, w, l, yaw relative to lidar coord)
             object_label = np.array([cat_id, x, y, z, h, w, l, ry], dtype = np.float32);
             labels = np.concatenate([labels, np.expand_dims(object_label, axis = 0)], axis = 0); # labels.shape = (N, 8)
           # 5) augmentation
           if np.random.uniform() < 0.66:
+            # augmentation happens with probability of 0.66
             if np.random.randint(low = 0, high = 2) == 0:
               # random rotation in range [-pi/4, pi/4]
               angle = np.random.uniform(low = -np.pi/4, high = np.pi/4);
