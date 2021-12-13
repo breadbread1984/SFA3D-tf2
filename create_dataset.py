@@ -76,18 +76,19 @@ class KittiDataset(object):
           lidar_path = join(lidar_dir, "%d.bin" % sample_id);
           calib_path = join(calib_dir, "%d.txt" % sample_id);
           label_path = join(label_dir, "%d.txt" % sample_id);
-          # 1) TODO: image processing
+          # 1) load image
+          image = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB); # image.shape = (height, width, channel)
           # 2) load lidar data
-          lidar_data = np.fromfile(lidar_path, dtype = np.float32).reshape(-1,4);
+          lidar_data = np.fromfile(lidar_path, dtype = np.float32).reshape(-1,4); # lidar_data.shape = (point number, 4)
           # 3) load calib data
           with open(calib_path) as f:
             lines = f.readlines();
-          p2 = np.array(lines[2].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # intrinsic matrix
-          p3 = np.array(lines[3].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # extrinsic matrix
-          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rotation matrix from RGB camera coord to velodyn camera coord
-          v2c = np.array(lines[5].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # velodyn coordinate to camera coordinate transform matrix
+          p2 = np.array(lines[2].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # camera 0 (left grayscale) camera coordinate to camera 2 (left color) image coordinate projection
+          p3 = np.array(lines[3].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # camera 0 (left grayscale) camera coordinate to camera 3 (right color) image coordinate projection
+          r0 = np.array(lines[4].strip().split(' ')[1:], dtype = np.float32).reshape([3, 3]); # rotation matrix from velodyn (laser) camera coordinate to camera 0 (left grayscale) camera coordinate
+          v2c = np.array(lines[5].strip().split(' ')[1:], dtype = np.float32).reshape([3, 4]); # velodyn (laser) camera coordinate to camera 0 (left grayscale) image coordinate projection
           r0_ext = np.eye(4); r0_ext[:3,:3] = r0;
-          # v2c = [R|t], c2v = [R'|-R'*t]
+          # v2c = [R|t], c2v = inv(v2c) = [R'|-R'*t]
           c2v = np.zeros_like(v2c); c2v[:3,:3] = v2c[:3,:3].transpose(); c2v[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
           # 4) load label (object boxes)
           labels = np.zeros((0,8), dtype = np.float32); # labels.shape = (0, 8)
@@ -287,6 +288,6 @@ class KittiDataset(object):
           yield lidar_data, labels;
     else:
       def gen():
-        
+        # TODO: https://github.com/maudzung/SFA3D/blob/5f042b9d194b63d47d740c42ad04243b02c2c26a/sfa/data_process/kitti_dataset.py#L66
       # load image only
     return gen;
