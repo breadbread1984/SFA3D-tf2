@@ -12,7 +12,7 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 18, use_fpn = True, h
   if num_resnet_layers == 18:
     is not exists('models'): mkdir('models');
     # FIXME: change the url
-    filename = wget.download('resnet18.h5', out = 'models');
+    filename = wget.download('https://github.com/breadbread1984/resnet18-34/raw/master/models/resnet18.h5', out = 'models');
     resnet = tf.keras.models.load_model(join('models', 'resnet18.h5'));
     output1 = resnet.get_layer('model_1').output;
     output2 = resnet.get_layer('model_3').output;
@@ -21,7 +21,7 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 18, use_fpn = True, h
   elif num_resnet_layers == 34:
     if not exists('models'): mkdir('models');
     # FIXME: change the url
-    filename = wget.download('resnet34.h5', out = 'models');
+    filename = wget.download('https://github.com/breadbread1984/resnet18-34/raw/master/models/resnet34.h5', out = 'models');
     resnet = tf.keras.models.load_model(join('models', 'resnet34.h5'));
     output1 = resnet.get_layer('model_2').output;
     output2 = resnet.get_layer('model_6').output;
