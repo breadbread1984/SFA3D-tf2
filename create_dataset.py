@@ -128,7 +128,7 @@ class KittiDataset(object):
               # 1) point cloud rotation along z-axis of velodyn camera coordinate
               points = np.hstack([lidar_data[:,0:3],np.ones((lidar_data.shape[0],1))]); # points.shape = (point number, 4)
               lidar_data[:, 0:3] = np.matmul(points, rot)[:, 0:3]; # lidar_data.shape = (point number, 3)
-              # 2) boxes rotation
+              # 2) target labels rotation
               for object_label in labels:
                 # object_label.shape = (8,) in sequence of cls_id,x,y,z,h,w,l,ry
                 # 2.1) convert center coordinate and box dimension to box corner coordinates in RGB camera coord
@@ -198,6 +198,8 @@ class KittiDataset(object):
               factor = np.random.uniform(0.95, 1.05);
               lidar_data[:, 0:3] = lidar_data[:, 0:3] * factor; # scale x,y,z
               labels[:, 1:7] = labels[:, 1:7] * factor; # scale x,y,z,h,w,l
+            # NOTE: scene point cloud: lidar_data.shape = (point number, 3)
+            # NOTE: object labels (category id, center x,y,z, h, w, l, ry): labels.shape = (object number, 8) 
             # 3) filtered lidar_data and labels outside boundary
             mask = np.where((lidar_data[:, 0] >= self.boundary['minX']) & (lidar_data[:, 0] <= self.boundary['maxX']) &
                             (lidar_data[:, 1] >= self.boundary['minY']) & (lidar_data[:, 1] <= self.boundary['maxY']) &
@@ -212,7 +214,7 @@ class KittiDataset(object):
             # 4) make bev map from lidar_data
             height = self.input_shape[0] + 1;
             width = self.input_shape[1] + 1;
-            pointcloud = np.copy(lidar_data);
+            pointcloud = np.copy(lidar_data); # pointcloud.shape = (point number, 3)
             discretization = (self.boundary["maxX"] - self.boundary["minX"]) / self.input_shape[0];
             pointcloud[:, 0] = np.int_(np.floor(pointcloud[:,0] / discretization));
             pointcloud[:, 1] = np.int_(np.floor(pointcloud[:,1] / discretization) + width / 2);
