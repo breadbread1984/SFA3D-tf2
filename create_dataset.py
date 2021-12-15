@@ -343,9 +343,24 @@ class KittiDataset(object):
             z_coor[k] = z - self.boundary['minZ'];
             obj_mask[k] = 1;
         if mode in ['train', 'val']:
-          yield lidar_data, {'hm_cen': hm_main_center, 'cen_offset': cen_offset, 'direction': direction, 'z_coor': z_coor, 'dim': dimension, 'indices_center': indices_center, 'obj_mask': obj_mask};
+          yield bev_map, hm_main_center, cen_offset, direction, z_coor, dimension, indices_center, obj_mask;
         else:
-          yield lidar_data, image;
+          yield bev_map, image;
     return gen;
+  def train_parse_function(self, bev_map, hm_main_center, cen_offset, direction, z_coor, dimension, indices_center, obj_mask):
+    # TODO
+    return bev_map, {''}
+  def test_parse_function(self, bev_map, image):
+    # TODO:
+    pass;
   def load_dataset(self,):
-    pass
+    trainset = tf.data.Dataset.from_generator(self.generator('train'),
+                                              (tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.int64, tf.float32),
+                                              (tf.TensorShape([self.input_shape[0], self.input_shape[1], 3]),
+                                               tf.TensorShape([self.num_classes, self.hm_size[0], self.hm_size[1]]),
+                                               tf.TensorShape([self.max_objects, 2]),
+                                               tf.TensorShape([self.max_objects, 2]),
+                                               tf.TensorShape([self.max_objects, 1]),
+                                               tf.TensorShape([self.max_objects, 3]),
+                                               tf.TensorShape([self.max_objects,]),
+                                               tf.TensorShape([self.max_objects,]),)).map(self.);
