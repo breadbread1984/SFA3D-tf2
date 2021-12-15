@@ -295,9 +295,9 @@ class KittiDataset(object):
               if flip: center[0] = hm_w - center[0] - 1;
               center_int = center.astype(np.int32);
               if cls_id < 0:
-                # if category is dont care or truck
-                # NOTE: if category is dont care, ignore all categories
-                # NOTE: else category must be truck, then ignore category 1 (car and van)
+                # if category is dont care or truck, ignore current class, but draw heatmap on related categories
+                # NOTE: if category is dont care, all categories are related
+                # NOTE: if category is truck, car and van are related
                 ignore_ids = [_ for _ in range(self.num_classes)] if cls_id == -1 else [- cls_id - 2];
                 def gaussian2D(shape, sigma = 1):
                   m, n = [(ss - 1.) / 2. for ss in shape];
@@ -320,8 +320,25 @@ class KittiDataset(object):
                     np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
                 hm_main_center[ignore_ids, center_int[1], center_int[0]] = 0.9999;
                 continue;
-              
-          yield lidar_data, labels;
+              heatmap = hm_main_center[cls_id];
+              diameter = 2 * radius + 1;
+              gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
+              x, y = int(center_int[0]), int(center_int[1]);
+              height, width = heatmap.shape[0:2];
+              left, right = min(x, radius), min(width - x, radius + 1);
+              top, bottom = min(y, radius), min(height - y, radius + 1);
+              masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right];
+              masked_gaussian = gaussian[radius - top:radius + bottom, radius - left: radius + right];
+              if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+                np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
+              indices_center[k] = center_int[1] * hm_w + center_int[0];
+              cen_offset[k] = center - center_int;
+              dimension[k, 0:3] = [h,w,l];
+              direction[k, 0:2] = [math.sin(float(yaw)), math.cos(float(yaw))];
+              if flip: direction[k, 0] = -direction[k, 0];
+              z_coor[k] = z - self.boundary['minZ'];
+              obj_mask[k] = 1;
+          yield lidar_data, {'hm_cen': hm_main_center, 'cen_offset': cen_offset, 'direction': direction, 'z_coor': z_coor, 'dim': dimension, 'indices_center': indices_center, 'obj_mask': obj_mask};
     else:
       def gen():
         # TODO: https://github.com/maudzung/SFA3D/blob/5f042b9d194b63d47d740c42ad04243b02c2c26a/sfa/data_process/kitti_dataset.py#L66
