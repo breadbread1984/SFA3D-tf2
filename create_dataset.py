@@ -55,7 +55,7 @@ class KittiDataset(object):
     assert type(hm_size) is tuple and len(hm_size) == 2;
     assert type(num_classes) is int;
     self.data_dir = data_dir;
-    self.hm_size = hm_size; # treat h l regression as classification. how many classes for h and how many classes for l
+    self.hm_size = hm_size; # heat map size (hm_l, hm_w)
     self.num_classes = num_classes;
     self.max_objects = max_objects;
     self.input_shape = input_shape;
@@ -78,7 +78,7 @@ class KittiDataset(object):
           label_path = join(label_dir, "%d.txt" % sample_id);
           # 1) load image
           image = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB); # image.shape = (height, width, channel)
-          # 2) load lidar data
+          # 2) load lidar data (x,y,z,grayscale intensity)
           lidar_data = np.fromfile(lidar_path, dtype = np.float32).reshape(-1,4); # lidar_data.shape = (point number, 4)
           # 3) load calib data
           with open(calib_path) as f:
@@ -244,7 +244,7 @@ class KittiDataset(object):
             # 6) generate labels
             num_objects = min(len(labels), self.max_objects);
             hm_l, hm_w = self.hm_size;
-            hm_main_center = np.zeros((self.num_classes, hm_l, hm_w), dtype = np.float32);
+            hm_main_center = np.zeros((self.num_classes, hm_l, hm_w), dtype = np.float32); # heatmap for target
             cen_offset = np.zeros((self.max_objects, 2), dtype = np.float32);
             direction = np.zeros((self.max_objects, 2), dtype = np.float32);
             z_coor = np.zeros((self.max_objects, 1), dtype = np.float32);
@@ -252,6 +252,7 @@ class KittiDataset(object):
             
             indices_center = np.zeros((self.max_objects), dtype = np.int64);
             obj_mask = np.zeros((self.max_objects), dtype = np.uint8);
+            # NOTE: only process the first num_objects labels
             for k in range(num_objects):
               cls_id, x, y, z, h, w, l, yaw = labels[k];
               cls_id = int(cls_id);
@@ -262,10 +263,11 @@ class KittiDataset(object):
                       self.boundary['minZ'] <= z <= self.boundary['maxZ']):
                 continue;
               if h <= 0 or w <= 0 or l <= 0: continue;
-              # quantilize l and w
+              # normalize the x y coordinate to label shape
               bbox_l = l / (self.boundary['maxX'] - self.boundary['minX']) * hm_l;
               bbox_w = w / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
               height, width = np.ceil(bbox_l), np.ceil(bbox_w);
+              # get radius and center of the heatmaps
               # get radius
               # larger solution of x^2 - (height + width) x + (width * height * (1 - 0.7) / (1 + 0.7)) = 0
               a1 = 1;
@@ -286,8 +288,39 @@ class KittiDataset(object):
               sq3 = np.sqrt(b3 ** 2 - 4 * a3 * c3);
               r3 = (-b3 + sq3) / (2 * a3); # larger solution is (-b + sqrt(b^2-4a*c)) / (2 * a)
               radius = max(0, int(min(r1, r2, r3)));
-              # 
-              center_y = (x - self.boundary['minX']) / 
+              # get center
+              center_y = (x - self.boundary['minX']) / (self.boundary['maxX'] - self.boundary['minX']) * hm_l;
+              center_x = (y - self.boundary['minY']) / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
+              center = np.array([center_x, center_y], dtype = np.float32); # center.shape = (2,)
+              if flip: center[0] = hm_w - center[0] - 1;
+              center_int = center.astype(np.int32);
+              if cls_id < 0:
+                # if category is dont care or truck
+                # NOTE: if category is dont care, ignore all categories
+                # NOTE: else category must be truck, then ignore category 1 (car and van)
+                ignore_ids = [_ for _ in range(self.num_classes)] if cls_id == -1 else [- cls_id - 2];
+                def gaussian2D(shape, sigma = 1):
+                  m, n = [(ss - 1.) / 2. for ss in shape];
+                  y, x = np.ogrid[-m:m + 1, -n:n + 1];
+                  h = np.exp(-(x * x + y * y) / (2 * sigma * sigma));
+                  h[h < np.finfo(h.dtype).eps * h.max()] = 0;
+                  return h;
+                for cls_ig in ignore_ids:
+                  # generate heat map for current class
+                  heatmap = hm_main_center[cls_ig];
+                  diameter = 2 * radius + 1;
+                  gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
+                  x, y = int(center_int[0]), int(center_int[1]);
+                  height, width = heatmap.shape[0:2];
+                  left, right = min(x, radius), min(width - x, radius + 1);
+                  top, bottom = min(y, radius), min(height - y, radius + 1);
+                  masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right];
+                  masked_gaussian = gaussian[radius - top:radius + bottom, radius - left: radius + right];
+                  if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+                    np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
+                hm_main_center[ignore_ids, center_int[1], center_int[0]] = 0.9999;
+                continue;
+              
           yield lidar_data, labels;
     else:
       def gen():
