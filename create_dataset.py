@@ -50,7 +50,7 @@ class KittiDataset(object):
     "minZ": -2.73,
     "maxZ": 1.27
   };
-  def __init__(self, data_dir, hm_size, num_classes, max_objects, input_shape = (608, 608)):
+  def __init__(self, data_dir, hm_size = (152, 152), num_classes = 3, max_objects = 50, input_shape = (608, 608)):
     assert type(data_dir) is str;
     assert type(hm_size) is tuple and len(hm_size) == 2;
     assert type(num_classes) is int;
@@ -68,18 +68,18 @@ class KittiDataset(object):
     label_dir = join(self.data_dir, sub_folder, 'label_2');
     split_txt_path = join(self.data_dir, 'ImageSets', '%s.txt' % mode);
     sample_id_list = [int(x.strip()) for x in open(split_txt_path).readlines()];
-    if mode in ['train', 'val']:
-      # load image with labels
-      def gen():
-        for sample_id in sample_id_list:
-          img_path = join(image_dir, "%d.png" % sample_id);
-          lidar_path = join(lidar_dir, "%d.bin" % sample_id);
-          calib_path = join(calib_dir, "%d.txt" % sample_id);
-          label_path = join(label_dir, "%d.txt" % sample_id);
+    # load image with labels
+    def gen():
+      for sample_id in sample_id_list:
+        if mode in ['test']:
           # 1) load image
-          image = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB); # image.shape = (height, width, channel)
-          # 2) load lidar data (x,y,z,grayscale intensity)
-          lidar_data = np.fromfile(lidar_path, dtype = np.float32).reshape(-1,4); # lidar_data.shape = (point number, 4)
+          image_path = join(image_dir, "%d.png" % sample_id);
+          image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB); # image.shape = (height, width, channel)
+        # 2) load lidar data (x,y,z,grayscale intensity)
+        lidar_path = join(lidar_dir, "%d.bin" % sample_id);
+        lidar_data = np.fromfile(lidar_path, dtype = np.float32).reshape(-1,4); # lidar_data.shape = (point number, 4)
+        if mode in ['train', 'val']:
+          calib_path = join(calib_dir, "%d.txt" % sample_id);
           # 3) load calib data
           with open(calib_path) as f:
             lines = f.readlines();
@@ -92,6 +92,7 @@ class KittiDataset(object):
           # camera 0 (left grayscale) camera coordinate to velodyn (laser) camera coordinate
           c2v = np.zeros_like(v2c); c2v[:3,:3] = v2c[:3,:3].transpose(); c2v[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
           # 4) load label (object boxes)
+          label_path = join(label_dir, "%d.txt" % sample_id);
           labels = np.zeros((0,8), dtype = np.float32); # labels.shape = (0, 8)
           for line in open(label_path, 'r'):
             line_parts = line.strip().split(' ');
@@ -200,147 +201,151 @@ class KittiDataset(object):
               labels[:, 1:7] = labels[:, 1:7] * factor; # scale x,y,z,h,w,l
             # NOTE: scene point cloud: lidar_data.shape = (point number, 4)
             # NOTE: object labels (category id, center x,y,z, h, w, l, ry): labels.shape = (object number, 8) 
-            # 3) filtered lidar_data and labels outside boundary
-            mask = np.where((lidar_data[:, 0] >= self.boundary['minX']) & (lidar_data[:, 0] <= self.boundary['maxX']) &
-                            (lidar_data[:, 1] >= self.boundary['minY']) & (lidar_data[:, 1] <= self.boundary['maxY']) &
-                            (lidar_data[:, 2] >= self.boundary['minZ']) & (lidar_data[:, 2] <= self.boundary['maxZ']));
-            lidar_data = lidar_data[mask]; # lidar_data.shape = (filtered point num, 4)
-            lidar_data[:,2] = lidar_data[:,2] - self.boundary['minZ'];
-            label_x = (labels[:, 1] >= self.boundary['minX']) & (labels[:, 1] < self.boundary['maxX']);
-            label_y = (labels[:, 2] >= self.boundary['minY']) & (labels[:, 2] < self.boundary['maxY']);
-            label_z = (labels[:, 3] >= self.boundary['minZ']) & (labels[:, 3] < self.boundary['maxZ']);
-            mask_label = label_x & label_y & label_z;
-            labels = labels[mask_label]; # labels.shape = (filtered target num, 8)
-            # 4) make bev map from lidar_data
-            height = self.input_shape[0] + 1;
-            width = self.input_shape[1] + 1;
-            pointcloud = np.copy(lidar_data); # pointcloud.shape = (point number, 4)
-            # resize point cloud over xy axis to fit input shape
-            discretization = (self.boundary["maxX"] - self.boundary["minX"]) / self.input_shape[0];
-            pointcloud[:, 0] = np.int_(np.floor(pointcloud[:,0] / discretization));
-            pointcloud[:, 1] = np.int_(np.floor(pointcloud[:,1] / discretization) + width / 2); # make origin the (y) center (x) left corner
-            # sort cloud points according to depth (z) in descending order
-            sorted_indices = np.lexsort((-pointcloud[:,2], pointcloud[:,1], pointcloud[:,0]));
-            pointcloud = pointcloud[sorted_indices];
-            # only left unique x,y with deepest z
-            _, unique_indices, unique_counts = np.unique(pointcloud[:, 0:2], axis = 0, return_index = True, return_counts = True);
-            pointcloud_top = pointcloud[unique_indices]; # pointcloud_top.shape = (filtered point number, 4)
-            heightMap = np.zeros((height, width)); # depth map
-            intensityMap = np.zeros((height, width)); # grayscale map
-            densityMap = np.zeros((height, width)); # cloud points thickness
-            max_height = float(np.abs(self.boundary['maxZ'] - self.boundary['minZ']));
-            # normalize depth map
-            heightMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:,2] / max_height;
-            # grayscale map
-            intensityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:,3];
-            # normalized cloud points thickness
-            densityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = np.minimum(1.0, np.log(unique_counts + 1) / np.log(64));
-            bev_map = np.stack([intensityMap[:self.input_shape[0],:self.input_shape[1]],
-                                heightMap[:self.input_shape[0],:self.input_shape[1]],
-                                densityMap[:self.input_shape[0],:self.input_shape[1]]], axis = -1); # rgb_map.shape = (height, width, 3)
-            # 5) random horizontal flip
-            flip = True if np.random.uniform() < 0.5 else False;
-            if flip: bev_map = bev_map[:,::-1,:];
-            # 6) generate labels
-            num_objects = min(len(labels), self.max_objects);
-            hm_l, hm_w = self.hm_size;
-            hm_main_center = np.zeros((self.num_classes, hm_l, hm_w), dtype = np.float32); # heatmap for target
-            cen_offset = np.zeros((self.max_objects, 2), dtype = np.float32);
-            direction = np.zeros((self.max_objects, 2), dtype = np.float32);
-            z_coor = np.zeros((self.max_objects, 1), dtype = np.float32);
-            dimension = np.zeros((self.max_objects, 3), dtype = np.float32);
+        # 3) filtered lidar_data and labels outside boundary
+        mask = np.where((lidar_data[:, 0] >= self.boundary['minX']) & (lidar_data[:, 0] <= self.boundary['maxX']) &
+                        (lidar_data[:, 1] >= self.boundary['minY']) & (lidar_data[:, 1] <= self.boundary['maxY']) &
+                        (lidar_data[:, 2] >= self.boundary['minZ']) & (lidar_data[:, 2] <= self.boundary['maxZ']));
+        lidar_data = lidar_data[mask]; # lidar_data.shape = (filtered point num, 4)
+        lidar_data[:,2] = lidar_data[:,2] - self.boundary['minZ'];
+        if mode in ['train', 'val']:
+          label_x = (labels[:, 1] >= self.boundary['minX']) & (labels[:, 1] < self.boundary['maxX']);
+          label_y = (labels[:, 2] >= self.boundary['minY']) & (labels[:, 2] < self.boundary['maxY']);
+          label_z = (labels[:, 3] >= self.boundary['minZ']) & (labels[:, 3] < self.boundary['maxZ']);
+          mask_label = label_x & label_y & label_z;
+          labels = labels[mask_label]; # labels.shape = (filtered target num, 8)
+        # 4) make bev map from lidar_data
+        height = self.input_shape[0] + 1;
+        width = self.input_shape[1] + 1;
+        pointcloud = np.copy(lidar_data); # pointcloud.shape = (point number, 4)
+        # resize point cloud over xy axis to fit input shape
+        discretization = (self.boundary["maxX"] - self.boundary["minX"]) / self.input_shape[0];
+        pointcloud[:, 0] = np.int_(np.floor(pointcloud[:,0] / discretization));
+        pointcloud[:, 1] = np.int_(np.floor(pointcloud[:,1] / discretization) + width / 2); # make origin the (y) center (x) left corner
+        # sort cloud points according to depth (z) in descending order
+        sorted_indices = np.lexsort((-pointcloud[:,2], pointcloud[:,1], pointcloud[:,0]));
+        pointcloud = pointcloud[sorted_indices];
+        # only left unique x,y with deepest z
+        _, unique_indices, unique_counts = np.unique(pointcloud[:, 0:2], axis = 0, return_index = True, return_counts = True);
+        pointcloud_top = pointcloud[unique_indices]; # pointcloud_top.shape = (filtered point number, 4)
+        heightMap = np.zeros((height, width)); # depth map
+        intensityMap = np.zeros((height, width)); # grayscale map
+        densityMap = np.zeros((height, width)); # cloud points thickness
+        max_height = float(np.abs(self.boundary['maxZ'] - self.boundary['minZ']));
+        # normalize depth map
+        heightMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:,2] / max_height;
+        # grayscale map
+        intensityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = pointcloud_top[:,3];
+        # normalized cloud points thickness
+        densityMap[np.int_(pointcloud_top[:,0]), np.int_(pointcloud_top[:,1])] = np.minimum(1.0, np.log(unique_counts + 1) / np.log(64));
+        bev_map = np.stack([intensityMap[:self.input_shape[0],:self.input_shape[1]],
+                            heightMap[:self.input_shape[0],:self.input_shape[1]],
+                            densityMap[:self.input_shape[0],:self.input_shape[1]]], axis = -1); # rgb_map.shape = (height, width, 3)
+        if mode in ['train', 'val']:
+          # 5) random horizontal flip
+          flip = True if np.random.uniform() < 0.5 else False;
+          if flip: bev_map = bev_map[:,::-1,:];
+          # 6) generate labels
+          num_objects = min(len(labels), self.max_objects);
+          hm_l, hm_w = self.hm_size;
+          hm_main_center = np.zeros((self.num_classes, hm_l, hm_w), dtype = np.float32); # heatmap for target
+          cen_offset = np.zeros((self.max_objects, 2), dtype = np.float32); # center offset from preset centers
+          direction = np.zeros((self.max_objects, 2), dtype = np.float32); # direction of the object
+          z_coor = np.zeros((self.max_objects, 1), dtype = np.float32); # depth
+          dimension = np.zeros((self.max_objects, 3), dtype = np.float32); # object box dimension
             
-            indices_center = np.zeros((self.max_objects), dtype = np.int64);
-            obj_mask = np.zeros((self.max_objects), dtype = np.uint8);
-            # NOTE: only process the first num_objects labels
-            for k in range(num_objects):
-              cls_id, x, y, z, h, w, l, yaw = labels[k];
-              cls_id = int(cls_id);
-              yaw = -yaw;
-              # discard invalid label
-              if not (self.boundary['minX'] <= x <= self.boundary['maxX'] and \
-                      self.boundary['minY'] <= y <= self.boundary['maxY'] and \
-                      self.boundary['minZ'] <= z <= self.boundary['maxZ']):
-                continue;
-              if h <= 0 or w <= 0 or l <= 0: continue;
-              # normalize the x y coordinate to label shape
-              bbox_l = l / (self.boundary['maxX'] - self.boundary['minX']) * hm_l;
-              bbox_w = w / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
-              height, width = np.ceil(bbox_l), np.ceil(bbox_w);
-              # get radius and center of the heatmaps
-              # get radius
-              # larger solution of x^2 - (height + width) x + (width * height * (1 - 0.7) / (1 + 0.7)) = 0
-              a1 = 1;
-              b1 = -(height + width);
-              c1 = width * height * (1 - 0.7) / (1 + 0.7);
-              sq1 = np.sqrt(b1 ** 2 - 4 * a1 * c1);
-              r1 = (-b1 + sq1) / (2 * a1); # larger solution is (-b + sqrt(b^2-4a*c)) / (2 * a)
-              # larger solution of 4 x^2 - 2 * (height + width) x + (1 - 0.7) * width * height = 0
-              a2 = 4;
-              b2 = -2 * (height + width);
-              c2 = (1 - 0.7) * width * height;
-              sq2 = np.sqrt(b2 ** 2 - 4 * a2 * c2);
-              r2 = (-b2 + sq2) / (2 * a2); # larger solution is (-b + sqrt(b^2-4a*c)) / (2 * a)
-              # larger solution of 4 * 0.7 x^2 + 2 * 0.7 * (height + width) x + (0.7 - 1) * width * height = 0
-              a3 = 4 * 0.7;
-              b3 = 2 * 0.7 * (height + width);
-              c3 = (0.7 - 1) * width * height;
-              sq3 = np.sqrt(b3 ** 2 - 4 * a3 * c3);
-              r3 = (-b3 + sq3) / (2 * a3); # larger solution is (-b + sqrt(b^2-4a*c)) / (2 * a)
-              radius = max(0, int(min(r1, r2, r3)));
-              # get center
-              center_y = (x - self.boundary['minX']) / (self.boundary['maxX'] - self.boundary['minX']) * hm_l;
-              center_x = (y - self.boundary['minY']) / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
-              center = np.array([center_x, center_y], dtype = np.float32); # center.shape = (2,)
-              if flip: center[0] = hm_w - center[0] - 1;
-              center_int = center.astype(np.int32);
-              if cls_id < 0:
-                # if category is dont care or truck, ignore current class, but draw heatmap on related categories
-                # NOTE: if category is dont care, all categories are related
-                # NOTE: if category is truck, car and van are related
-                ignore_ids = [_ for _ in range(self.num_classes)] if cls_id == -1 else [- cls_id - 2];
-                def gaussian2D(shape, sigma = 1):
-                  m, n = [(ss - 1.) / 2. for ss in shape];
-                  y, x = np.ogrid[-m:m + 1, -n:n + 1];
-                  h = np.exp(-(x * x + y * y) / (2 * sigma * sigma));
-                  h[h < np.finfo(h.dtype).eps * h.max()] = 0;
-                  return h;
-                for cls_ig in ignore_ids:
-                  # generate heat map for current class
-                  heatmap = hm_main_center[cls_ig];
-                  diameter = 2 * radius + 1;
-                  gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
-                  x, y = int(center_int[0]), int(center_int[1]);
-                  height, width = heatmap.shape[0:2];
-                  left, right = min(x, radius), min(width - x, radius + 1);
-                  top, bottom = min(y, radius), min(height - y, radius + 1);
-                  masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right];
-                  masked_gaussian = gaussian[radius - top:radius + bottom, radius - left: radius + right];
-                  if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
-                    np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
-                hm_main_center[ignore_ids, center_int[1], center_int[0]] = 0.9999;
-                continue;
-              heatmap = hm_main_center[cls_id];
-              diameter = 2 * radius + 1;
-              gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
-              x, y = int(center_int[0]), int(center_int[1]);
-              height, width = heatmap.shape[0:2];
-              left, right = min(x, radius), min(width - x, radius + 1);
-              top, bottom = min(y, radius), min(height - y, radius + 1);
-              masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right];
-              masked_gaussian = gaussian[radius - top:radius + bottom, radius - left: radius + right];
-              if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
-                np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
-              indices_center[k] = center_int[1] * hm_w + center_int[0];
-              cen_offset[k] = center - center_int;
-              dimension[k, 0:3] = [h,w,l];
-              direction[k, 0:2] = [math.sin(float(yaw)), math.cos(float(yaw))];
-              if flip: direction[k, 0] = -direction[k, 0];
-              z_coor[k] = z - self.boundary['minZ'];
-              obj_mask[k] = 1;
+          indices_center = np.zeros((self.max_objects), dtype = np.int64);
+          obj_mask = np.zeros((self.max_objects), dtype = np.uint8);
+          # NOTE: only process the first num_objects labels
+          for k in range(num_objects):
+            cls_id, x, y, z, h, w, l, yaw = labels[k];
+            cls_id = int(cls_id);
+            yaw = -yaw;
+            # discard invalid label
+            if not (self.boundary['minX'] <= x <= self.boundary['maxX'] and \
+                    self.boundary['minY'] <= y <= self.boundary['maxY'] and \
+                    self.boundary['minZ'] <= z <= self.boundary['maxZ']):
+              continue;
+            if h <= 0 or w <= 0 or l <= 0: continue;
+            # normalize the x y coordinate to label shape
+            bbox_l = l / (self.boundary['maxX'] - self.boundary['minX']) * hm_l;
+            bbox_w = w / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
+            height, width = np.ceil(bbox_l), np.ceil(bbox_w);
+            # get radius and center of the heatmaps
+            # get radius
+            # larger solution of x^2 - (height + width) x + (width * height * (1 - 0.7) / (1 + 0.7)) = 0
+            a1 = 1;
+            b1 = -(height + width);
+            c1 = width * height * (1 - 0.7) / (1 + 0.7);
+            sq1 = np.sqrt(b1 ** 2 - 4 * a1 * c1);
+            r1 = (-b1 + sq1) / (2 * a1); # larger solution is (-b + sqrt(b^2-4a*c)) / (2 * a)
+            # larger solution of 4 x^2 - 2 * (height + width) x + (1 - 0.7) * width * height = 0
+            a2 = 4;
+            b2 = -2 * (height + width);
+            c2 = (1 - 0.7) * width * height;
+            sq2 = np.sqrt(b2 ** 2 - 4 * a2 * c2);
+            r2 = (-b2 + sq2) / (2 * a2); # larger solution is (-b + sqrt(b^2-4a*c)) / (2 * a)
+            # larger solution of 4 * 0.7 x^2 + 2 * 0.7 * (height + width) x + (0.7 - 1) * width * height = 0
+            a3 = 4 * 0.7;
+            b3 = 2 * 0.7 * (height + width);
+            c3 = (0.7 - 1) * width * height;
+            sq3 = np.sqrt(b3 ** 2 - 4 * a3 * c3);
+            r3 = (-b3 + sq3) / (2 * a3); # larger solution is (-b + sqrt(b^2-4a*c)) / (2 * a)
+            radius = max(0, int(min(r1, r2, r3)));
+            # get center
+            center_y = (x - self.boundary['minX']) / (self.boundary['maxX'] - self.boundary['minX']) * hm_l;
+            center_x = (y - self.boundary['minY']) / (self.boundary['maxY'] - self.boundary['minY']) * hm_w;
+            center = np.array([center_x, center_y], dtype = np.float32); # center.shape = (2,)
+            if flip: center[0] = hm_w - center[0] - 1;
+            center_int = center.astype(np.int32);
+            if cls_id < 0:
+              # if category is dont care or truck, ignore current class, but draw heatmap on related categories
+              # NOTE: if category is dont care, all categories are related
+              # NOTE: if category is truck, car and van are related
+              ignore_ids = [_ for _ in range(self.num_classes)] if cls_id == -1 else [- cls_id - 2];
+              def gaussian2D(shape, sigma = 1):
+                m, n = [(ss - 1.) / 2. for ss in shape];
+                y, x = np.ogrid[-m:m + 1, -n:n + 1];
+                h = np.exp(-(x * x + y * y) / (2 * sigma * sigma));
+                h[h < np.finfo(h.dtype).eps * h.max()] = 0;
+                return h;
+              for cls_ig in ignore_ids:
+                # generate heat map for current class
+                heatmap = hm_main_center[cls_ig];
+                diameter = 2 * radius + 1;
+                gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
+                x, y = int(center_int[0]), int(center_int[1]);
+                height, width = heatmap.shape[0:2];
+                left, right = min(x, radius), min(width - x, radius + 1);
+                top, bottom = min(y, radius), min(height - y, radius + 1);
+                masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right];
+                masked_gaussian = gaussian[radius - top:radius + bottom, radius - left: radius + right];
+                if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+                  np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
+              hm_main_center[ignore_ids, center_int[1], center_int[0]] = 0.9999;
+              continue;
+            heatmap = hm_main_center[cls_id];
+            diameter = 2 * radius + 1;
+            gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
+            x, y = int(center_int[0]), int(center_int[1]);
+            height, width = heatmap.shape[0:2];
+            left, right = min(x, radius), min(width - x, radius + 1);
+            top, bottom = min(y, radius), min(height - y, radius + 1);
+            masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right];
+            masked_gaussian = gaussian[radius - top:radius + bottom, radius - left: radius + right];
+            if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+              np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
+            # only generate labels for categories other than dont care and truck.
+            indices_center[k] = center_int[1] * hm_w + center_int[0];
+            cen_offset[k] = center - center_int;
+            dimension[k, 0:3] = [h,w,l];
+            direction[k, 0:2] = [math.sin(float(yaw)), math.cos(float(yaw))];
+            if flip: direction[k, 0] = -direction[k, 0];
+            z_coor[k] = z - self.boundary['minZ'];
+            obj_mask[k] = 1;
+        if mode in ['train', 'val']:
           yield lidar_data, {'hm_cen': hm_main_center, 'cen_offset': cen_offset, 'direction': direction, 'z_coor': z_coor, 'dim': dimension, 'indices_center': indices_center, 'obj_mask': obj_mask};
-    else:
-      def gen():
-        # TODO: https://github.com/maudzung/SFA3D/blob/5f042b9d194b63d47d740c42ad04243b02c2c26a/sfa/data_process/kitti_dataset.py#L66
-      # load image only
+        else:
+          yield lidar_data, image;
     return gen;
+  def load_dataset(self,):
+    pass
