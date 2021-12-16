@@ -297,17 +297,17 @@ class KittiDataset(object):
             center = np.array([center_x, center_y], dtype = np.float32); # center.shape = (2,)
             if flip: center[0] = hm_w - center[0] - 1;
             center_int = center.astype(np.int32);
+            def gaussian2D(shape, sigma = 1):
+              m, n = [(ss - 1.) / 2. for ss in shape];
+              y, x = np.ogrid[-m:m + 1, -n:n + 1];
+              h = np.exp(-(x * x + y * y) / (2 * sigma * sigma));
+              h[h < np.finfo(h.dtype).eps * h.max()] = 0;
+              return h;
             if cls_id < 0:
               # if category is dont care or truck, ignore current class, but draw heatmap on related categories
               # NOTE: if category is dont care, all categories are related
               # NOTE: if category is truck, car and van are related
               ignore_ids = [_ for _ in range(self.num_classes)] if cls_id == -1 else [- cls_id - 2];
-              def gaussian2D(shape, sigma = 1):
-                m, n = [(ss - 1.) / 2. for ss in shape];
-                y, x = np.ogrid[-m:m + 1, -n:n + 1];
-                h = np.exp(-(x * x + y * y) / (2 * sigma * sigma));
-                h[h < np.finfo(h.dtype).eps * h.max()] = 0;
-                return h;
               for cls_ig in ignore_ids:
                 # generate heat map for current class
                 heatmap = hm_main_center[cls_ig];
