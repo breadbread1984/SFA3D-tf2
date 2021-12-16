@@ -73,13 +73,13 @@ class KittiDataset(object):
       for sample_id in sample_id_list:
         if mode in ['test']:
           # 1) load image
-          image_path = join(image_dir, "%d.png" % sample_id);
+          image_path = join(image_dir, "{:06d}.png".format(sample_id));
           image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB); # image.shape = (height, width, channel)
         # 2) load lidar data (x,y,z,grayscale intensity)
-        lidar_path = join(lidar_dir, "%d.bin" % sample_id);
+        lidar_path = join(lidar_dir, "{:06d}.bin".format(sample_id));
         lidar_data = np.fromfile(lidar_path, dtype = np.float32).reshape(-1,4); # lidar_data.shape = (point number, 4)
         if mode in ['train', 'val']:
-          calib_path = join(calib_dir, "%d.txt" % sample_id);
+          calib_path = join(calib_dir, "{:06d}.txt".format(sample_id));
           # 3) load calib data
           with open(calib_path) as f:
             lines = f.readlines();
@@ -92,7 +92,7 @@ class KittiDataset(object):
           # camera 0 (left grayscale) camera coordinate to velodyn (laser) camera coordinate
           c2v = np.zeros_like(v2c); c2v[:3,:3] = v2c[:3,:3].transpose(); c2v[:3,3] = np.dot(-v2c[:3,:3].transpose(),v2c[:3,3]);
           # 4) load label (object boxes)
-          label_path = join(label_dir, "%d.txt" % sample_id);
+          label_path = join(label_dir, "{:06d}.txt".format(sample_id));
           labels = np.zeros((0,8), dtype = np.float32); # labels.shape = (0, 8)
           for line in open(label_path, 'r'):
             line_parts = line.strip().split(' ');
