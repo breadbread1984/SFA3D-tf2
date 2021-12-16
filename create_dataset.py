@@ -361,7 +361,7 @@ class KittiDataset(object):
                                                tf.TensorShape([self.max_objects, 1]),
                                                tf.TensorShape([self.max_objects, 3]),
                                                tf.TensorShape([self.max_objects,]),
-                                               tf.TensorShape([self.max_objects,]),)).map(self.train_parse_function, num_parallel_calls = tf.data.AUTUTUNE);
+                                               tf.TensorShape([self.max_objects,]),)).map(self.train_parse_function, num_parallel_calls = tf.data.AUTOTUNE);
     testset = tf.data.Dataset.from_generator(self.generator('test'),
                                              (tf.float32, tf.uint8),
                                              (tf.TensorShape([self.input_shape[0], self.input_shape[1], 3]),
