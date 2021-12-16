@@ -123,7 +123,7 @@ class KittiDataset(object):
             if np.random.randint(low = 0, high = 2) == 0:
               # cloud point random rotation in range [-pi/4, pi/4] with respect to z-axis (yaw) of velodyn camera coordinate
               angle = np.random.uniform(low = -np.pi/4, high = np.pi/4);
-              rot = np.eyes(4);
+              rot = np.eye(4);
               rot[0,0] = np.cos(angle); rot[0,1] = -np.sin(angle);
               rot[1,0] = np.sin(angle); rot[1,1] = np.cos(angle);
               # 1) point cloud rotation along z-axis of velodyn camera coordinate
