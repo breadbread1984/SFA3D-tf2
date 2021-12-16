@@ -348,7 +348,7 @@ class KittiDataset(object):
           yield bev_map, image;
     return gen;
   def train_parse_function(self, bev_map, hm_main_center, cen_offset, direction, z_coor, dimension, indices_center, obj_mask):
-    return bev_map, {'hm_cen': hm_main_center, 'cen_offset': cen_offset, 'direction': directionm 'z_coor': z_coor, 'dim': dimension};
+    return bev_map, {'hm_cen': hm_main_center, 'cen_offset': cen_offset, 'direction': directionm, 'z_coor': z_coor, 'dim': dimension};
   def test_parse_function(self, bev_map, image):
     return (bev_map, image), tf.zeros([], dtype = tf.float32);
   def load_dataset(self,):
