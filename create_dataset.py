@@ -348,11 +348,9 @@ class KittiDataset(object):
           yield bev_map, image;
     return gen;
   def train_parse_function(self, bev_map, hm_main_center, cen_offset, direction, z_coor, dimension, indices_center, obj_mask):
-    # TODO
-    return bev_map, {''}
+    return bev_map, {'hm_cen': hm_main_center, 'cen_offset': cen_offset, 'direction': directionm 'z_coor': z_coor, 'dim': dimension};
   def test_parse_function(self, bev_map, image):
-    # TODO:
-    pass;
+    return (bev_map, image), tf.zeros([], dtype = tf.float32);
   def load_dataset(self,):
     trainset = tf.data.Dataset.from_generator(self.generator('train'),
                                               (tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.int64, tf.float32),
@@ -363,4 +361,24 @@ class KittiDataset(object):
                                                tf.TensorShape([self.max_objects, 1]),
                                                tf.TensorShape([self.max_objects, 3]),
                                                tf.TensorShape([self.max_objects,]),
-                                               tf.TensorShape([self.max_objects,]),)).map(self.);
+                                               tf.TensorShape([self.max_objects,]),)).map(self.train_parse_function, num_parallel_calls = tf.data.AUTUTUNE);
+    validationset = tf.data.Dataset.from_generator(self.generator('val'),
+                                                   (tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.int64, tf.float32),
+                                                   (tf.TensorShape([self.input_shape[0], self.input_shape[1], 3]),
+                                                    tf.TensorShape([self.num_classes, self.hm_size[0], self.hm_size[1]]),
+                                                    tf.TensorShape([self.max_objects, 2]),
+                                                    tf.TensorShape([self.max_objects, 2]),
+                                                    tf.TensorShape([self.max_objects, 1]),
+                                                    tf.TensorShape([self.max_objects, 3]),
+                                                    tf.TensorShape([self.max_objects,]),
+                                                    tf.TensorShape([self.max_objects,]),)).map(self.train_parse_function, num_parallel_calls = tf.data.AUTUTUNE);
+    testset = tf.data.Dataset.from_generator(self.generator('test'),
+                                             (tf.float32, tf.uint8),
+                                             (tf.TensorShape([self.input_shape[0], self.input_shape[1], 3]),
+                                              tf.TensorShape([None, None, 3]),)).map(self.test_parse_function, num_parallel_calls = tf.data.AUTOTUNE);
+    return trainset, validationset, testset;
+
+if __name__ == "__main__":
+  kitti_dataset = KittiDataset(data_dir = 'kitti');
+  trainset, validationset, testset = kitti_dataset.load_dataset();
+  
