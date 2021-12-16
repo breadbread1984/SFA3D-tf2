@@ -64,7 +64,7 @@ class KittiDataset(object):
     sub_folder = 'training' if mode in ['train', 'val'] else 'testing';
     image_dir = join(self.data_dir, sub_folder, 'image_2');
     lidar_dir = join(self.data_dir, sub_folder, 'velodyne');
-    calib_dir = join(self.data_dir, sub_folder, 'valib');
+    calib_dir = join(self.data_dir, sub_folder, 'calib');
     label_dir = join(self.data_dir, sub_folder, 'label_2');
     split_txt_path = join(self.data_dir, 'ImageSets', '%s.txt' % mode);
     sample_id_list = [int(x.strip()) for x in open(split_txt_path).readlines()];
