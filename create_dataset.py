@@ -377,7 +377,7 @@ if __name__ == "__main__":
     count -= 1;
     if count <= 0: break;
   for (bev_map, image), _ in testset:
-    cv2.imshow('image', image);
+    cv2.imshow('image', image.numpy());
     cv2.waitKey();
     count -= 1;
     if count <= 0: break;
