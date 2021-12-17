@@ -374,9 +374,12 @@ if __name__ == "__main__":
   trainset, testset = kitti_dataset.load_dataset();
   count = 10;
   for bev_map, labels in trainset:
+    print(bev_map.shape, labels['hm_cen'].shape, labels['cen_offset'].shape, labels['direction'].shape, labels['z_coor'].shape, labels['dim'].shape);
     count -= 1;
     if count <= 0: break;
+  count = 10;
   for (bev_map, image), _ in testset:
+    print(bev_map.shape, image.shape);
     cv2.imshow('image', image.numpy());
     cv2.waitKey();
     count -= 1;
