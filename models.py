@@ -181,7 +181,28 @@ def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   # 3) direction loss
   direction_loss = L1Loss(2, max_objects)([pred_direction, direction, indices_center, obj_mask]); # direction_loss.shape = ()
   # 4) z_coor loss
-  z_coor_loss = 
+  z_coor_loss = L1Loss(1, max_objects, balanced = True)([pred_z_coor, z_coor, indices_center, obj_mask]); # z_coor_loss.shape = ()
+  # 5) dim loss
+  dim_loss = L1Loss(3, max_objects, balanced = True)([pred_dim, dim, indices_center, obj_mask]); # dim_loss.shape = ()
+  
+  loss = tf.keras.layers.Add()([hm_cen_loss, cen_offset_loss, direction_loss, z_coor_loss, dim_loss]); # loss.shape = ()
+  return tf.keras.Model(inputs = (pred_hm_cen, pred_cen_offset, pred_direction, pred_z_coor, pred_dim, hm_cen, cen_offset, direction, z_coor, dim, indices_center, obj_mask), outputs = loss);
+
+def Trainer(use_fpn = True):
+  bev_map = tf.keras.Input((None, None, 3)); # bev_map.shape = (608, 608, 3)
+  
+  hm_cen = tf.keras.Input([num_classes, hm_size[0], hm_size[1]]);
+  cen_offset = tf.keras.Input([max_objects, 2]);
+  direction = tf.keras.Input([max_objects, 2]);
+  z_coor = tf.keras.Input([max_objects, 1]);
+  dim = tf.keras.Input([max_objects, 3]);
+  
+  indices_center = tf.keras.Input([max_objects], dtype = tf.int32);
+  obj_mask = tf.keras.Input([max_objects]);
+  
+  pred_hm_cen, pred_cen_offset, pred_direction, pred_z_coor, pred_dim = PoseResNet(use_fpn = use_fpn, name = 'sfa3d')(bev_map);
+  loss = Loss()([pred_hm_cen, pred_cen_offset, pred_direction, pred_z_coor, pred_dim, hm_cen, cen_offset, direction, z_coor, dim, indices_center, obj_mask]);
+  return tf.keras.Model(inputs = (bev_map, hm_cen, cen_offset, direction, z_coor, dim, indices_center, obj_mask), outputs = loss);
 
 if __name__ == "__main__":
   import numpy as np;
