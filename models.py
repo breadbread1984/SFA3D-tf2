@@ -153,7 +153,7 @@ def L1Loss(channels, max_objects = 50, balanced = False, alpha = 0.5, beta = 1.,
         c * x + c / d - a * b
       )), arguments = {'a': alpha, 'b': beta, 'c': gamma, 'd': np.exp(gamma/alpha) - 1})(diff);
   else:
-    loss = tfa.losses.SigmoidFocalCrossEntropy(from_logits = True, reduction = tf.keras.losses.Reduction.SUM)(masked_gt, masked_feat);
+    loss = tfa.losses.SigmoidFocalCrossEntropy(reduction = tf.keras.losses.Reduction.SUM)(masked_gt, masked_feat);
   loss = tf.keras.layers.Lambda(lambda x: x[0] / (tf.math.reduce_sum(x[1]) + 1e-4))([loss, mask]);
   return tf.keras.Model(inputs = (pred, gt, indices_center, obj_mask), outputs = loss);
 
@@ -173,9 +173,9 @@ def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   indices_center = tf.keras.Input([max_objects], dtype = tf.int32);
   obj_mask = tf.keras.Input([max_objects]);
   # 1) hm_cen loss
-  gt = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(hm_cen); # gt.shape = (num_classes, hm_size, hm_size, 1)
-  pred = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(pred_hm_cen); # pred.shape = (num_classes, hm_size, hm_size, 1)
-  hm_cen_loss = tfa.losses.SigmoidFocalCrossEntropy(from_logits = True, reduction = tf.keras.losses.Reduction.AUTO)(gt, pred); # hm_cen_loss.shape = ()
+  gt = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.math.sigmoid(x), axis = -1))(hm_cen); # gt.shape = (num_classes, hm_size, hm_size, 1)
+  pred = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.math.sigmoid(x), axis = -1))(pred_hm_cen); # pred.shape = (num_classes, hm_size, hm_size, 1)
+  hm_cen_loss = tfa.losses.SigmoidFocalCrossEntropy(reduction = tf.keras.losses.Reduction.AUTO)(gt, pred); # hm_cen_loss.shape = ()
   # 2) cen_offset loss
   cen_offset_loss = L1Loss(2, max_objects)([pred_cen_offset, cen_offset, indices_center, obj_mask]); # cen_offset_loss.shape = ()
   # 3) direction loss
