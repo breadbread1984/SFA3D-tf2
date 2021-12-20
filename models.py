@@ -3,6 +3,7 @@
 from os import mkdir;
 from os.path import exists, join;
 import wget;
+import numpy as np;
 import tensorflow as tf;
 import tensorflow_addons as tfa;
 
@@ -131,16 +132,30 @@ def Gather3D(axis):
   results = tf.keras.layers.Lambda(lambda x: tf.gather_nd(x[0], x[1]))([inputs, coord]); # results.shape = ind_shape
   return tf.keras.Model(inputs = (inputs, ind), outputs = results);
 
-def L1Loss(channels, max_objects = 50):
+def L1Loss(channels, max_objects = 50, balanced = False, alpha = 0.5, beta = 1., gamma = 1.5):
   pred = tf.keras.Input((None, None, channels)); # pred.shape = (batch, hm_size, hm_size, channels)
   gt = tf.keras.Input((max_objects, channels)); # gt.shape = (batch, max_objects, channels)
   indices_center = tf.keras.Input([max_objects], dtype = tf.int32); # indices_center.shape = (batch, max_objects)
   obj_mask = tf.keras.Input([max_objects]); # obj_mask.shape = (batch, max_objects)
   # only focus on locations having objects
   feat = tf.keras.layers.Reshape((-1, channels))(pred); # feat.shape = (batch, hm_size * hm_size, channels)
-  ind = tf.keras.layers.Lambda(lambda x,c: tf.tile(tf.expand_dims(x, axis = -1), (1,1,c)), arguments = {'c': channels})(indices_center); # ind.shape = (batch, max_object, channels)
-  feat = Gather3D(axis = 1)([feat, ind]); # feat.shape = (batch, max_object, channels)
-  
+  ind = tf.keras.layers.Lambda(lambda x,c: tf.tile(tf.expand_dims(x, axis = -1), (1,1,c)), arguments = {'c': channels})(indices_center); # ind.shape = (batch, max_objects, channels)
+  feat = Gather3D(axis = 1)([feat, ind]); # feat.shape = (batch, max_objects, channels)
+  mask = tf.keras.layers.Lambda(lambda x,c: tf.tile(tf.expand_dims(x, axis = -1), (1,1,c)), arguments = {'c': channels})(obj_mask); # mask.shape = (batch, max_objects, channels)
+  masked_feat = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0] * x[1], axis = -1))([feat, mask]); # masked_feat.shape = (batch, max_objects, channels, 1)
+  masked_gt = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0] * x[1], axis = -1))([gt, mask]); # masked_gt.shape = (batch, max_objects, channels, 1)
+  if balanced == True:
+    diff = tf.keras.layers.Lambda(lambda x: tf.math.abs(x[0] - x[1]))([masked_gt, masked_feat]); # diff.shape = (batch, max_objects, channels, 1)
+    loss = tf.keras.layers.Lambda(lambda x,a,b,c,d: tf.math.reduce_sum(
+      tf.where(
+        tf.math.less(x, b),
+        a / d * (d * x + 1) * tf.math.log(d * x / b + 1) - a * x,
+        c * x + c / d - a * b
+      )), arguments = {'a': alpha, 'b': beta, 'c': gamma, 'd': np.exp(gamma/alpha) - 1})(diff);
+  else:
+    loss = tfa.losses.SigmoidFocalCrossEntropy(from_logits = True, reduction = tf.keras.losses.Reduction.SUM)(masked_gt, masked_feat);
+  loss = tf.keras.layers.Lambda(lambda x: x[0] / (tf.math.reduce_sum(x[1]) + 1e-4))([loss, mask]);
+  return tf.keras.Model(inputs = (pred, gt, indices_center, obj_mask), outputs = loss);
 
 def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   pred_hm_cen = tf.keras.Input([hm_size[0], hm_size[1], num_classes]);
@@ -162,7 +177,11 @@ def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   pred = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(pred_hm_cen); # pred.shape = (num_classes, hm_size, hm_size, 1)
   hm_cen_loss = tfa.losses.SigmoidFocalCrossEntropy(from_logits = True, reduction = tf.keras.losses.Reduction.AUTO)(gt, pred); # hm_cen_loss.shape = ()
   # 2) cen_offset loss
-  
+  cen_offset_loss = L1Loss(2, max_objects)([pred_cen_offset, cen_offset, indices_center, obj_mask]); # cen_offset_loss.shape = ()
+  # 3) direction loss
+  direction_loss = L1Loss(2, max_objects)([pred_direction, direction, indices_center, obj_mask]); # direction_loss.shape = ()
+  # 4) z_coor loss
+  z_coor_loss = 
 
 if __name__ == "__main__":
   import numpy as np;
