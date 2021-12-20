@@ -13,7 +13,16 @@ download the following files
 put the four files under directory kitti and unzip them.
 
 ## how to train
+train model with the following command
+
+```shell
+python3 train.py
+```
 
 ## how to save model
+save model from the trained checkpoint with the following command
 
+```shell
+python3 train.py --save_model
+```
 
