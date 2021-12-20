@@ -48,7 +48,7 @@ def main(unused_argv):
   else:
     trainer = Trainer(use_fpn = FLAGS.use_fpn);
     optimizer = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.CosineDecay(FLAGS.lr, decay_steps = np.ceil(6000 / FLAGS.batch_size), alpha = 0.1));
-    trainer.compile(optimizer = optimizer, loss = [Loss]);
+    trainer.compile(optimizer = optimizer, loss = Loss);
   # create dataset
   kitti = KittiDataset(data_dir = FLAGS.kitti_path);
   trainset, testset = kitti_dataset.load_dataset();
