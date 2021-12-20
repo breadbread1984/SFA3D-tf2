@@ -191,7 +191,7 @@ def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
 def Trainer(use_fpn = True):
   bev_map = tf.keras.Input((None, None, 3)); # bev_map.shape = (608, 608, 3)
   
-  hm_cen = tf.keras.Input([num_classes, hm_size[0], hm_size[1]]);
+  hm_cen = tf.keras.Input([3, hm_size[0], hm_size[1]]);
   cen_offset = tf.keras.Input([max_objects, 2]);
   direction = tf.keras.Input([max_objects, 2]);
   z_coor = tf.keras.Input([max_objects, 1]);
