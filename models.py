@@ -188,10 +188,10 @@ def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   loss = tf.keras.layers.Add()([hm_cen_loss, cen_offset_loss, direction_loss, z_coor_loss, dim_loss]); # loss.shape = ()
   return tf.keras.Model(inputs = (pred_hm_cen, pred_cen_offset, pred_direction, pred_z_coor, pred_dim, hm_cen, cen_offset, direction, z_coor, dim, indices_center, obj_mask), outputs = loss);
 
-def Trainer(use_fpn = True):
+def Trainer(use_fpn = True, hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   bev_map = tf.keras.Input((None, None, 3)); # bev_map.shape = (608, 608, 3)
   
-  hm_cen = tf.keras.Input([3, hm_size[0], hm_size[1]]);
+  hm_cen = tf.keras.Input([num_classes, hm_size[0], hm_size[1]]);
   cen_offset = tf.keras.Input([max_objects, 2]);
   direction = tf.keras.Input([max_objects, 2]);
   z_coor = tf.keras.Input([max_objects, 1]);
