@@ -248,7 +248,7 @@ class KittiDataset(object):
           # 6) generate labels
           num_objects = min(len(labels), self.max_objects);
           hm_l, hm_w = self.hm_size;
-          hm_main_center = np.zeros((self.num_classes, hm_l, hm_w), dtype = np.float32); # heatmap for target
+          hm_main_center = np.zeros((hm_l, hm_w, self.num_classes), dtype = np.float32); # heatmap for target
           cen_offset = np.zeros((self.max_objects, 2), dtype = np.float32); # center offset from preset centers
           direction = np.zeros((self.max_objects, 2), dtype = np.float32); # direction of the object
           z_coor = np.zeros((self.max_objects, 1), dtype = np.float32); # depth
@@ -311,7 +311,7 @@ class KittiDataset(object):
               ignore_ids = [_ for _ in range(self.num_classes)] if cls_id == -1 else [- cls_id - 2];
               for cls_ig in ignore_ids:
                 # generate heat map for current class
-                heatmap = hm_main_center[cls_ig];
+                heatmap = hm_main_center[..., cls_ig];
                 diameter = 2 * radius + 1;
                 gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
                 x, y = int(center_int[0]), int(center_int[1]);
@@ -322,9 +322,9 @@ class KittiDataset(object):
                 masked_gaussian = gaussian[radius - top:radius + bottom, radius - left: radius + right];
                 if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
                   np.maximum(masked_heatmap, masked_gaussian, out = masked_heatmap);
-              hm_main_center[ignore_ids, center_int[1], center_int[0]] = 0.9999;
+              hm_main_center[center_int[1], center_int[0], ignore_ids] = 0.9999;
               continue;
-            heatmap = hm_main_center[cls_id];
+            heatmap = hm_main_center[..., cls_id];
             diameter = 2 * radius + 1;
             gaussian = gaussian2D((diameter, diameter), sigma = diameter / 6);
             x, y = int(center_int[0]), int(center_int[1]);
@@ -356,7 +356,7 @@ class KittiDataset(object):
     trainset = tf.data.Dataset.from_generator(self.generator('train'),
                                               (tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.int64, tf.float32),
                                               (tf.TensorShape([self.input_shape[0], self.input_shape[1], 3]),
-                                               tf.TensorShape([self.num_classes, self.hm_size[0], self.hm_size[1]]),
+                                               tf.TensorShape([self.hm_size[0], self.hm_size[1], self.num_classes]),
                                                tf.TensorShape([self.max_objects, 2]),
                                                tf.TensorShape([self.max_objects, 2]),
                                                tf.TensorShape([self.max_objects, 1]),

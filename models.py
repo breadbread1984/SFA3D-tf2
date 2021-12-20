@@ -164,7 +164,7 @@ def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   pred_z_coor = tf.keras.Input([hm_size[0], hm_size[1], 1]);
   pred_dim = tf.keras.Input([hm_size[0], hm_size[1], 3]);
   
-  hm_cen = tf.keras.Input([num_classes, hm_size[0], hm_size[1]]);
+  hm_cen = tf.keras.Input([hm_size[0], hm_size[1], num_classes]);
   cen_offset = tf.keras.Input([max_objects, 2]);
   direction = tf.keras.Input([max_objects, 2]);
   z_coor = tf.keras.Input([max_objects, 1]);
