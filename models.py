@@ -132,6 +132,16 @@ def Gather3D(axis):
   results = tf.keras.layers.Lambda(lambda x: tf.gather_nd(x[0], x[1]))([inputs, coord]); # results.shape = ind_shape
   return tf.keras.Model(inputs = (inputs, ind), outputs = results);
 
+def FocalLoss(input_shape, alpha = 2., beta = 4.):
+  y_true = tf.keras.Input(input_shape);
+  y_pred = tf.keras.Input(input_shape);
+  pos_inds = tf.keras.layers.Lambda(lambda x: tf.cast(tf.math.equal(x, 1), dtype = tf.float32))(y_true);
+  neg_inds = tf.keras.layers.Lambda(lambda x: tf.cast(tf.math.less(x, 1), dtype = tf.float32))(y_true);
+  pos_loss = tf.keras.layers.Lambda(lambda x,a: tf.math.reduce_sum(tf.math.log(x[1]) * tf.math.pow(1 - x[1], a) * x[2]), arguments = {'a': alpha})([y_true, y_pred, pos_inds]);
+  neg_loss = tf.keras.layers.Lambda(lambda x,a,b: tf.math.reduce_sum(tf.math.log(1 - x[1]) * tf.math.pow(x[1], a) * tf.math.pow(1 - x[0], b) * x[2]), arguments = {'a': alpha, 'b': beta})([y_true, y_pred, neg_inds]);
+  loss = tf.keras.layers.Lambda(lambda x: tf.where(tf.math.equal(tf.math.reduce_sum(x[0]), 0), -x[2], -(x[1] + x[2]) / tf.math.reduce_sum(x[0])))([pos_inds, pos_loss, neg_loss]);
+  return tf.keras.Model(inputs = (y_true, y_pred), outputs = loss);
+
 def L1Loss(channels, max_objects = 50, balanced = False, alpha = 0.5, beta = 1., gamma = 1.5):
   pred = tf.keras.Input((None, None, channels)); # pred.shape = (batch, hm_size, hm_size, channels)
   gt = tf.keras.Input((max_objects, channels)); # gt.shape = (batch, max_objects, channels)
@@ -142,10 +152,10 @@ def L1Loss(channels, max_objects = 50, balanced = False, alpha = 0.5, beta = 1.,
   ind = tf.keras.layers.Lambda(lambda x,c: tf.tile(tf.expand_dims(x, axis = -1), (1,1,c)), arguments = {'c': channels})(indices_center); # ind.shape = (batch, max_objects, channels)
   feat = Gather3D(axis = 1)([feat, ind]); # feat.shape = (batch, max_objects, channels)
   mask = tf.keras.layers.Lambda(lambda x,c: tf.tile(tf.expand_dims(x, axis = -1), (1,1,c)), arguments = {'c': channels})(obj_mask); # mask.shape = (batch, max_objects, channels)
-  masked_feat = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0] * x[1], axis = -1))([feat, mask]); # masked_feat.shape = (batch, max_objects, channels, 1)
-  masked_gt = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x[0] * x[1], axis = -1))([gt, mask]); # masked_gt.shape = (batch, max_objects, channels, 1)
+  masked_feat = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([feat, mask]); # masked_feat.shape = (batch, max_objects, channels)
+  masked_gt = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([gt, mask]); # masked_gt.shape = (batch, max_objects, channels)
   if balanced == True:
-    diff = tf.keras.layers.Lambda(lambda x: tf.math.abs(x[0] - x[1]))([masked_gt, masked_feat]); # diff.shape = (batch, max_objects, channels, 1)
+    diff = tf.keras.layers.Lambda(lambda x: tf.math.abs(x[0] - x[1]))([masked_gt, masked_feat]); # diff.shape = (batch, max_objects, channels)
     loss = tf.keras.layers.Lambda(lambda x,a,b,c,d: tf.math.reduce_sum(
       tf.where(
         tf.math.less(x, b),
@@ -153,7 +163,7 @@ def L1Loss(channels, max_objects = 50, balanced = False, alpha = 0.5, beta = 1.,
         c * x + c / d - a * b
       )), arguments = {'a': alpha, 'b': beta, 'c': gamma, 'd': np.exp(gamma/alpha) - 1})(diff);
   else:
-    loss = tfa.losses.SigmoidFocalCrossEntropy(reduction = tf.keras.losses.Reduction.SUM)(masked_gt, masked_feat);
+    loss = tf.keras.losses.MeanAbsoluteError(reduction = tf.keras.losses.Reduction.SUM)(masked_gt, masked_feat);
   loss = tf.keras.layers.Lambda(lambda x: x[0] / (tf.math.reduce_sum(x[1]) + 1e-4))([loss, mask]);
   return tf.keras.Model(inputs = (pred, gt, indices_center, obj_mask), outputs = loss);
 
@@ -173,9 +183,9 @@ def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
   indices_center = tf.keras.Input([max_objects], dtype = tf.int32);
   obj_mask = tf.keras.Input([max_objects]);
   # 1) hm_cen loss
-  gt = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.math.sigmoid(x), axis = -1))(hm_cen); # gt.shape = (num_classes, hm_size, hm_size, 1)
-  pred = tf.keras.layers.Lambda(lambda x: tf.expand_dims(tf.math.sigmoid(x), axis = -1))(pred_hm_cen); # pred.shape = (num_classes, hm_size, hm_size, 1)
-  hm_cen_loss = tfa.losses.SigmoidFocalCrossEntropy(reduction = tf.keras.losses.Reduction.AUTO)(gt, pred); # hm_cen_loss.shape = ()
+  gt = tf.keras.layers.Lambda(lambda x: tf.math.sigmoid(x))(hm_cen); # gt.shape = (batch, hm_size, hm_size, num_classes)
+  pred = tf.keras.layers.Lambda(lambda x: tf.math.sigmoid(x))(pred_hm_cen); # pred.shape = (batch, hm_size, hm_size, num_classes)
+  hm_cen_loss = FocalLoss((hm_size[0], hm_size[1], num_classes))(gt, pred); # hm_cen_loss.shape = ()
   # 2) cen_offset loss
   cen_offset_loss = L1Loss(2, max_objects)([pred_cen_offset, cen_offset, indices_center, obj_mask]); # cen_offset_loss.shape = ()
   # 3) direction loss
