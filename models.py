@@ -4,6 +4,7 @@ from os import mkdir;
 from os.path import exists, join;
 import wget;
 import tensorflow as tf;
+import tensorflow_addons as tfa;
 
 def PoseResNet(img_shape = (608, 608), num_resnet_layers = 18, use_fpn = True, head_hidden_channels = 64, heads_output_channels = {'hm_cen': 3, 'cen_offset': 2, 'direction': 2, 'z_coor': 1, 'dim': 3}, **kwargs):
   assert type(img_shape) in [list, tuple] and len(img_shape) == 2;
@@ -111,6 +112,57 @@ def PoseResNet(img_shape = (608, 608), num_resnet_layers = 18, use_fpn = True, h
       for head_name, channels in heads_output_channels.items():
         outputs.append(tf.keras.layers.Conv2D(channels, (1,1), padding = 'same', name = head_name)(results));
   return tf.keras.Model(inputs = inputs, outputs = outputs, **kwargs);
+
+def Gather3D(axis):
+  assert type(axis) is int and 0 <= axis <= 2;
+  inputs = tf.keras.Input((None, None));
+  ind = tf.keras.Input((None, None), dtype = tf.int32);
+  x = tf.keras.layers.Lambda(lambda x: tf.cast(tf.tile(tf.reshape(tf.range(tf.shape(x)[0]), (-1, 1, 1)), (1, tf.shape(x)[1], tf.shape(x)[2])), dtype = tf.int32))(ind); # x.shape = ind_shape
+  y = tf.keras.layers.Lambda(lambda x: tf.cast(tf.tile(tf.reshape(tf.range(tf.shape(x)[1]), (1, -1, 1)), (tf.shape(x)[0], 1, tf.shape(x)[2])), dtype = tf.int32))(ind); # y.shape = ind_shape
+  z = tf.keras.layers.Lambda(lambda x: tf.cast(tf.tile(tf.reshape(tf.range(tf.shape(x)[2]), (1, 1, -1)), (tf.shape(x)[0], tf.shape(x)[1], 1)), dtype = tf.int32))(ind); # z.shape = ind_shape
+  if axis == 0:
+    coord = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = -1))([ind, y, z]); # ind_shape x 3
+  elif axis == 1:
+    coord = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = -1))([x, ind, z]); # ind_shape x 3
+  elif axis == 2:
+    coord = tf.keras.layers.Lambda(lambda x: tf.stack(x, axis = -1))([x, y, ind]); # ind_shape x 3
+  else:
+    raise Exception('invalid axis');
+  results = tf.keras.layers.Lambda(lambda x: tf.gather_nd(x[0], x[1]))([inputs, coord]); # results.shape = ind_shape
+  return tf.keras.Model(inputs = (inputs, ind), outputs = results);
+
+def L1Loss(channels, max_objects = 50):
+  pred = tf.keras.Input((None, None, channels)); # pred.shape = (batch, hm_size, hm_size, channels)
+  gt = tf.keras.Input((max_objects, channels)); # gt.shape = (batch, max_objects, channels)
+  indices_center = tf.keras.Input([max_objects], dtype = tf.int32); # indices_center.shape = (batch, max_objects)
+  obj_mask = tf.keras.Input([max_objects]); # obj_mask.shape = (batch, max_objects)
+  # only focus on locations having objects
+  feat = tf.keras.layers.Reshape((-1, channels))(pred); # feat.shape = (batch, hm_size * hm_size, channels)
+  ind = tf.keras.layers.Lambda(lambda x,c: tf.tile(tf.expand_dims(x, axis = -1), (1,1,c)), arguments = {'c': channels})(indices_center); # ind.shape = (batch, max_object, channels)
+  feat = Gather3D(axis = 1)([feat, ind]); # feat.shape = (batch, max_object, channels)
+  
+
+def Loss(hm_size = (152, 152), num_classes = 3, max_objects = 50,):
+  pred_hm_cen = tf.keras.Input([hm_size[0], hm_size[1], num_classes]);
+  pred_cen_offset = tf.keras.Input([hm_size[0], hm_size[1], 2]);
+  pred_direction = tf.keras.Input([hm_size[0], hm_size[1], 2]);
+  pred_z_coor = tf.keras.Input([hm_size[0], hm_size[1], 1]);
+  pred_dim = tf.keras.Input([hm_size[0], hm_size[1], 3]);
+  
+  hm_cen = tf.keras.Input([num_classes, hm_size[0], hm_size[1]]);
+  cen_offset = tf.keras.Input([max_objects, 2]);
+  direction = tf.keras.Input([max_objects, 2]);
+  z_coor = tf.keras.Input([max_objects, 1]);
+  dim = tf.keras.Input([max_objects, 3]);
+  
+  indices_center = tf.keras.Input([max_objects], dtype = tf.int32);
+  obj_mask = tf.keras.Input([max_objects]);
+  # 1) hm_cen loss
+  gt = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(hm_cen); # gt.shape = (num_classes, hm_size, hm_size, 1)
+  pred = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis = -1))(pred_hm_cen); # pred.shape = (num_classes, hm_size, hm_size, 1)
+  hm_cen_loss = tfa.losses.SigmoidFocalCrossEntropy(from_logits = True, reduction = tf.keras.losses.Reduction.AUTO)(gt, pred); # hm_cen_loss.shape = ()
+  # 2) cen_offset loss
+  
 
 if __name__ == "__main__":
   import numpy as np;
